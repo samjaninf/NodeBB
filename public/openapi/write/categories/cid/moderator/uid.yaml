@@ -44,6 +44,17 @@ put:
                         items:
                           type: string
                           description: Language key of the privilege name's user-friendly name
+                  labelData:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        label:
+                          type: string
+                          description: the name of the privilege displayed in the ACP dashboard
+                        type:
+                          type: string
+                          description: type of the privilege (one of viewing, posting, moderation or other)
                   users:
                     type: array
                     items:
@@ -53,6 +64,9 @@ put:
                           type: number
                           description: A user identifier
                           example: 1
+                        isLocal:
+                          type: boolean
+                          description: Whether the user belongs to the local installation or not.
                         username:
                           type: string
                           description: A friendly name for a given user account
@@ -87,6 +101,9 @@ put:
                           additionalProperties:
                             type: boolean
                             description: A set of privileges with either true or false
+                        types:
+                          type: object
+                          description: Each privilege will have a key in this object, the value will be the type of the privilege (viewing, posting, moderation or other)
                   groups:
                     type: array
                     items:
@@ -101,6 +118,9 @@ put:
                           additionalProperties:
                             type: boolean
                             description: A set of privileges with either true or false
+                        types:
+                          type: object
+                          description: Each privilege will have a key in this object, the value will be the type of the privilege (viewing, posting, moderation or other)
                         isPrivate:
                           type: boolean
                         isSystem:

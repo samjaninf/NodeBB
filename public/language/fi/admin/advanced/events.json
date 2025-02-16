@@ -9,5 +9,9 @@
 	"filter-type": "Tapahtuman tyyppi",
 	"filter-start": "Aloituspäivä",
 	"filter-end": "Lopetuspäivä",
-	"filter-perPage": "Per Sivu"
+	"filter-user": "Filter by User",
+	"filter-user.placeholder": "Type user name to filter...",
+	"filter-group": "Filter by Group",
+	"filter-group.placeholder": "Type group name to filter...",
+	"filter-per-page": "Sivulla"
 }

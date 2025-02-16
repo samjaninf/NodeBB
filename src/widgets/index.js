@@ -22,7 +22,12 @@ widgets.render = async function (uid, options) {
 
 	const locations = _.uniq(Object.keys(data.global).concat(Object.keys(data[options.template])));
 
-	const widgetData = await Promise.all(locations.map(location => renderLocation(location, data, uid, options)));
+	let config = options.res.locals.config || {};
+	if (options.res.locals.isAPI) {
+		config = await apiController.loadConfig(options.req);
+	}
+
+	const widgetData = await Promise.all(locations.map(location => renderLocation(location, data, uid, options, config)));
 
 	const returnData = {};
 	locations.forEach((location, i) => {
@@ -34,18 +39,20 @@ widgets.render = async function (uid, options) {
 	return returnData;
 };
 
-async function renderLocation(location, data, uid, options) {
+async function renderLocation(location, data, uid, options, config) {
 	const widgetsAtLocation = (data[options.template][location] || []).concat(data.global[location] || []);
 
 	if (!widgetsAtLocation.length) {
 		return [];
 	}
 
-	const renderedWidgets = await Promise.all(widgetsAtLocation.map(widget => renderWidget(widget, uid, options)));
+	const renderedWidgets = await Promise.all(
+		widgetsAtLocation.map(widget => renderWidget(widget, uid, options, config, location))
+	);
 	return renderedWidgets;
 }
 
-async function renderWidget(widget, uid, options) {
+async function renderWidget(widget, uid, options, config, location) {
 	if (!widget || !widget.data || (!!widget.data['hide-mobile'] && options.req.useragent.isMobile)) {
 		return;
 	}
@@ -55,41 +62,41 @@ async function renderWidget(widget, uid, options) {
 		return;
 	}
 
-	let config = options.res.locals.config || {};
-	if (options.res.locals.isAPI) {
-		config = await apiController.loadConfig(options.req);
-	}
-
-	const userLang = config.userLang || meta.config.defaultLang || 'en-GB';
 	const templateData = _.assign({ }, options.templateData, { config: config });
-	const data = await plugins.hooks.fire(`filter:widget.render:${widget.widget}`, {
-		uid: uid,
-		area: options,
-		templateData: templateData,
-		data: widget.data,
-		req: options.req,
-		res: options.res,
-	});
-
-	if (!data) {
-		return;
-	}
-
-	let { html } = data;
-
-	if (widget.data.container && widget.data.container.match('{body}')) {
-		html = await Benchpress.compileRender(widget.data.container, {
-			title: widget.data.title,
-			body: html,
-			template: data.templateData && data.templateData.template,
+	try {
+		const data = await plugins.hooks.fire(`filter:widget.render:${widget.widget}`, {
+			uid: uid,
+			area: options,
+			templateData: templateData,
+			data: widget.data,
+			req: options.req,
+			res: options.res,
+			location,
 		});
-	}
 
-	if (html) {
-		html = await translator.translate(html, userLang);
-	}
+		if (!data) {
+			return;
+		}
 
-	return { html };
+		let { html } = data;
+
+		if (widget.data.container && widget.data.container.match('{body}')) {
+			html = await Benchpress.compileRender(widget.data.container, {
+				title: widget.data.title,
+				body: html,
+				template: data.templateData && data.templateData.template,
+			});
+		}
+
+		if (html) {
+			html = await translator.translate(html, config.userLang || meta.config.defaultLang || 'en-GB');
+		}
+
+		return { html };
+	} catch (err) {
+		winston.error(err.stack);
+		return { html: '' };
+	}
 }
 
 widgets.checkVisibility = async function (data, uid) {
@@ -188,15 +195,84 @@ widgets.setAreas = async function (areas) {
 	);
 };
 
-widgets.reset = async function () {
+widgets.getAvailableAreas = async function () {
 	const defaultAreas = [
-		{ name: 'Draft Zone', template: 'global', location: 'header' },
-		{ name: 'Draft Zone', template: 'global', location: 'footer' },
-		{ name: 'Draft Zone', template: 'global', location: 'sidebar' },
+		{ name: 'Global Header', template: 'global', location: 'header' },
+		{ name: 'Global Footer', template: 'global', location: 'footer' },
+		{ name: 'Global Sidebar', template: 'global', location: 'sidebar' },
+
+		{ name: 'Group Page (Left)', template: 'groups/details.tpl', location: 'left' },
+		{ name: 'Group Page (Right)', template: 'groups/details.tpl', location: 'right' },
+
+		{ name: 'Chat Header', template: 'chats.tpl', location: 'header' },
+		{ name: 'Chat Sidebar', template: 'chats.tpl', location: 'sidebar' },
 	];
 
+	return await plugins.hooks.fire('filter:widgets.getAreas', defaultAreas);
+};
+
+widgets.saveLocationsOnThemeReset = async function () {
+	const locations = {};
+	const available = await widgets.getAvailableAreas();
+	for (const area of available) {
+		/* eslint-disable no-await-in-loop */
+		const widgetsAtLocation = await widgets.getArea(area.template, area.location);
+		if (widgetsAtLocation.length) {
+			locations[area.template] = locations[area.template] || [];
+			if (!locations[area.template].includes(area.location)) {
+				locations[area.template].push(area.location);
+			}
+		}
+	}
+
+	if (Object.keys(locations).length) {
+		await db.set('widgets:draft:locations', JSON.stringify(locations));
+	}
+};
+
+widgets.moveMissingAreasToDrafts = async function () {
+	const locationsObj = await db.get('widgets:draft:locations');
+	if (!locationsObj) {
+		return;
+	}
+	try {
+		const locations = JSON.parse(locationsObj);
+		const [available, draftWidgets] = await Promise.all([
+			widgets.getAvailableAreas(),
+			widgets.getArea('global', 'drafts'),
+		]);
+		let saveDraftWidgets = draftWidgets || [];
+		for (const [template, tplLocations] of Object.entries(locations)) {
+			for (const location of tplLocations) {
+				const locationExists = available.find(
+					area => area.template === template && area.location === location
+				);
+				if (!locationExists) {
+					const widgetsAtLocation = await widgets.getArea(template, location);
+					saveDraftWidgets = saveDraftWidgets.concat(widgetsAtLocation);
+					await widgets.setArea({
+						template,
+						location,
+						widgets: [],
+					});
+				}
+			}
+		}
+		await widgets.setArea({
+			template: 'global',
+			location: 'drafts',
+			widgets: saveDraftWidgets,
+		});
+	} catch (err) {
+		winston.error(err.stack);
+	} finally {
+		await db.delete('widgets:draft:locations');
+	}
+};
+
+widgets.reset = async function () {
 	const [areas, drafts] = await Promise.all([
-		plugins.hooks.fire('filter:widgets.getAreas', defaultAreas),
+		widgets.getAvailableAreas(),
 		widgets.getArea('global', 'drafts'),
 	]);
 

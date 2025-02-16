@@ -1,7 +1,6 @@
 'use strict';
 
 const assert = require('assert');
-const async = require('async');
 const fs = require('fs');
 const path = require('path');
 const nconf = require('nconf');
@@ -10,6 +9,7 @@ const db = require('./mocks/databasemock');
 const helpers = require('./helpers');
 const Groups = require('../src/groups');
 const User = require('../src/user');
+const plugins = require('../src/plugins');
 const utils = require('../src/utils');
 const socketGroups = require('../src/socket.io/groups');
 const apiGroups = require('../src/api/groups');
@@ -21,6 +21,12 @@ describe('Groups', () => {
 	let adminUid;
 	let testUid;
 	before(async () => {
+		// Attach an emailer hook so related requests do not error
+		plugins.hooks.register('emailer-test', {
+			hook: 'static:email.send',
+			method: dummyEmailerHook,
+		});
+
 		const navData = require('../install/data/navigation.json');
 		await navigation.save(navData);
 
@@ -75,6 +81,14 @@ describe('Groups', () => {
 			password: '123456',
 		});
 		await Groups.join('administrators', adminUid);
+	});
+
+	async function dummyEmailerHook(data) {
+		// pretend to handle sending emails
+	}
+
+	after(async () => {
+		plugins.hooks.unregister('emailer-test', 'static:email.send');
 	});
 
 	describe('.list()', () => {
@@ -161,41 +175,20 @@ describe('Groups', () => {
 			});
 		});
 
-		it('should return all users if no query', (done) => {
-			function createAndJoinGroup(username, email, callback) {
-				async.waterfall([
-					function (next) {
-						User.create({ username: username, email: email }, next);
-					},
-					function (uid, next) {
-						Groups.join('Test', uid, next);
-					},
-				], callback);
+		it('should return all users if no query', async () => {
+			async function createAndJoinGroup(username, email) {
+				const uid = await User.create({ username: username, email: email });
+				await Groups.join('Test', uid);
 			}
-			async.series([
-				function (next) {
-					createAndJoinGroup('newuser', 'newuser@b.com', next);
-				},
-				function (next) {
-					createAndJoinGroup('bob', 'bob@b.com', next);
-				},
-			], (err) => {
-				assert.ifError(err);
-
-				socketGroups.searchMembers({ uid: adminUid }, { groupName: 'Test', query: '' }, (err, data) => {
-					assert.ifError(err);
-					assert.equal(data.users.length, 3);
-					done();
-				});
-			});
+			await createAndJoinGroup('newuser', 'newuser@b.com');
+			await createAndJoinGroup('bob', 'bob@b.com');
+			const { users } = await apiGroups.listMembers({ uid: adminUid }, { slug: 'test', query: '' });
+			assert.equal(users.length, 3);
 		});
 
-		it('should search group members', (done) => {
-			socketGroups.searchMembers({ uid: adminUid }, { groupName: 'Test', query: 'test' }, (err, data) => {
-				assert.ifError(err);
-				assert.strictEqual('testuser', data.users[0].username);
-				done();
-			});
+		it('should search group members', async () => {
+			const { users } = await apiGroups.listMembers({ uid: adminUid }, { slug: 'test', query: 'test' });
+			assert.strictEqual('testuser', users[0].username);
 		});
 
 		it('should not return hidden groups', async () => {
@@ -584,37 +577,20 @@ describe('Groups', () => {
 			});
 		});
 
-		it('should remove group from privilege groups', (done) => {
+		it('should remove group from privilege groups', async () => {
 			const privileges = require('../src/privileges');
 			const cid = 1;
 			const groupName = '1';
 			const uid = 1;
-			async.waterfall([
-				function (next) {
-					Groups.create({ name: groupName }, next);
-				},
-				function (groupData, next) {
-					privileges.categories.give(['groups:topics:create'], cid, groupName, next);
-				},
-				function (next) {
-					Groups.isMember(groupName, 'cid:1:privileges:groups:topics:create', next);
-				},
-				function (isMember, next) {
-					assert(isMember);
-					Groups.destroy(groupName, next);
-				},
-				function (next) {
-					Groups.isMember(groupName, 'cid:1:privileges:groups:topics:create', next);
-				},
-				function (isMember, next) {
-					assert(!isMember);
-					Groups.isMember(uid, 'registered-users', next);
-				},
-				function (isMember, next) {
-					assert(isMember);
-					next();
-				},
-			], done);
+			await Groups.create({ name: groupName });
+			await privileges.categories.give(['groups:topics:create'], cid, groupName);
+			let isMember = await Groups.isMember(groupName, 'cid:1:privileges:groups:topics:create');
+			assert(isMember);
+			await Groups.destroy(groupName);
+			isMember = await Groups.isMember(groupName, 'cid:1:privileges:groups:topics:create');
+			assert(!isMember);
+			isMember = await Groups.isMember(uid, 'registered-users');
+			assert(isMember);
 		});
 	});
 
@@ -779,40 +755,23 @@ describe('Groups', () => {
 	});
 
 	describe('.leaveAllGroups()', () => {
-		it('should remove a user from all groups', (done) => {
-			Groups.leaveAllGroups(testUid, (err) => {
-				assert.ifError(err);
-
-				const groups = ['Test', 'Hidden'];
-				async.every(groups, (group, next) => {
-					Groups.isMember(testUid, group, (err, isMember) => {
-						next(err, !isMember);
-					});
-				}, (err, result) => {
-					assert.ifError(err);
-					assert(result);
-
-					done();
-				});
-			});
+		it('should remove a user from all groups', async () => {
+			await Groups.leaveAllGroups(testUid);
+			const groups = ['Test', 'Hidden'];
+			const isMembers = await Groups.isMemberOfGroups(testUid, groups);
+			assert(!isMembers.includes(true));
 		});
 	});
 
 	describe('.show()', () => {
-		it('should make a group visible', (done) => {
-			Groups.show('Test', function (err) {
-				assert.ifError(err);
-				assert.equal(arguments.length, 1);
-				db.isSortedSetMember('groups:visible:createtime', 'Test', (err, isMember) => {
-					assert.ifError(err);
-					assert.strictEqual(isMember, true);
-					done();
-				});
-			});
+		it('should make a group visible', async () => {
+			await Groups.show('Test');
+			const isMember = await db.isSortedSetMember('groups:visible:createtime', 'Test');
+			assert.strictEqual(isMember, true);
 		});
 	});
 
-	describe('socket methods', () => {
+	describe('socket/api methods', () => {
 		it('should error if data is null', (done) => {
 			socketGroups.before({ uid: 0 }, 'groups.join', null, (err) => {
 				assert.equal(err.message, '[[error:invalid-data]]');
@@ -953,6 +912,19 @@ describe('Groups', () => {
 
 			const isInvited = await Groups.isInvited(uid, 'PrivateCanJoin');
 			assert(!isInvited);
+		});
+
+		it('should fail to rescind last owner', async () => {
+			const uid = await User.create({ username: 'lastgroupowner' });
+			await Groups.create({
+				name: 'last owner',
+				description: 'Foobar!',
+				ownerUid: uid,
+			});
+			await assert.rejects(
+				apiGroups.rescind({ uid: adminUid }, { slug: 'last-owner', uid: uid }),
+				{ message: '[[error:group-needs-owner]]' },
+			);
 		});
 
 		it('should error if user is not invited', async () => {
@@ -1103,34 +1075,25 @@ describe('Groups', () => {
 			}
 		});
 
-		it('should fail to load more groups with invalid data', (done) => {
-			socketGroups.loadMore({ uid: adminUid }, {}, (err) => {
-				assert.equal(err.message, '[[error:invalid-data]]');
-				done();
-			});
+		it('should load initial set of groups when passed no arguments', async () => {
+			const { groups } = await apiGroups.list({ uid: adminUid }, {});
+			assert(Array.isArray(groups));
 		});
 
-		it('should load more groups', (done) => {
-			socketGroups.loadMore({ uid: adminUid }, { after: 0, sort: 'count' }, (err, data) => {
-				assert.ifError(err);
-				assert(Array.isArray(data.groups));
-				done();
-			});
+		it('should load more groups', async () => {
+			const { groups } = await apiGroups.list({ uid: adminUid }, { after: 0, sort: 'count' });
+			assert(Array.isArray(groups));
 		});
 
-		it('should fail to load more members with invalid data', (done) => {
-			socketGroups.loadMoreMembers({ uid: adminUid }, {}, (err) => {
-				assert.equal(err.message, '[[error:invalid-data]]');
-				done();
-			});
+		it('should load initial set of group members when passed no arguments', async () => {
+			const { users } = await apiGroups.listMembers({ uid: adminUid }, {});
+			assert(users);
+			assert(Array.isArray(users));
 		});
 
-		it('should load more members', (done) => {
-			socketGroups.loadMoreMembers({ uid: adminUid }, { after: 0, groupName: 'PrivateCanJoin' }, (err, data) => {
-				assert.ifError(err);
-				assert(Array.isArray(data.users));
-				done();
-			});
+		it('should load more members', async () => {
+			const { users } = await apiGroups.listMembers({ uid: adminUid }, { after: 0, groupName: 'PrivateCanJoin' });
+			assert(Array.isArray(users));
 		});
 	});
 
@@ -1219,8 +1182,17 @@ describe('Groups', () => {
 			);
 		});
 
-		it('should remove user from group', async () => {
+		it('should remove user from group if caller is admin', async () => {
 			await apiGroups.leave({ uid: adminUid }, { uid: testUid, slug: 'newgroup' });
+			const isMember = await Groups.isMember(testUid, 'newgroup');
+			assert(!isMember);
+		});
+
+		it('should remove user from group if caller is a global moderator', async () => {
+			const globalModUid = await User.getUidByUsername('glomod');
+			await apiGroups.join({ uid: adminUid }, { uid: testUid, slug: 'newgroup' });
+
+			await apiGroups.leave({ uid: globalModUid }, { uid: testUid, slug: 'newgroup' });
 			const isMember = await Groups.isMember(testUid, 'newgroup');
 			assert(!isMember);
 		});
@@ -1262,22 +1234,11 @@ describe('Groups', () => {
 		let regularUid;
 		const logoPath = path.join(__dirname, '../test/files/test.png');
 		const imagePath = path.join(__dirname, '../test/files/groupcover.png');
-		before((done) => {
-			User.create({ username: 'regularuser', password: '123456' }, (err, uid) => {
-				assert.ifError(err);
-				regularUid = uid;
-				async.series([
-					function (next) {
-						Groups.join('Test', adminUid, next);
-					},
-					function (next) {
-						Groups.join('Test', regularUid, next);
-					},
-					function (next) {
-						helpers.copyFile(logoPath, imagePath, next);
-					},
-				], done);
-			});
+		before(async () => {
+			regularUid = await User.create({ username: 'regularuser', password: '123456' });
+			await Groups.join('Test', adminUid);
+			await Groups.join('Test', regularUid);
+			await helpers.copyFile(logoPath, imagePath);
 		});
 
 		it('should fail if user is not logged in or not owner', (done) => {

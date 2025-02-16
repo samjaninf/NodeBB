@@ -27,9 +27,9 @@ define('forum/account/edit/password', [
 				utils.assertPasswordValidity(password.val(), zxcvbn);
 
 				if (password.val() === ajaxify.data.username) {
-					throw new Error('[[user:password_same_as_username]]');
+					throw new Error('[[user:password-same-as-username]]');
 				} else if (password.val() === ajaxify.data.email) {
-					throw new Error('[[user:password_same_as_email]]');
+					throw new Error('[[user:password-same-as-email]]');
 				}
 
 				showSuccess(password_notify);
@@ -41,7 +41,7 @@ define('forum/account/edit/password', [
 
 		function onPasswordConfirmChanged() {
 			if (password.val() !== password_confirm.val()) {
-				showError(password_confirm_notify, '[[user:change_password_error_match]]');
+				showError(password_confirm_notify, '[[user:change-password-error-match]]');
 				passwordsmatch = false;
 			} else {
 				if (password.val()) {
@@ -56,8 +56,8 @@ define('forum/account/edit/password', [
 			}
 		}
 
-		password.on('blur', onPasswordChanged);
-		password_confirm.on('blur', onPasswordConfirmChanged);
+		password.on('input', onPasswordChanged);
+		password_confirm.on('input', onPasswordConfirmChanged);
 
 		$('#changePasswordBtn').on('click', function () {
 			onPasswordChanged();
@@ -90,11 +90,11 @@ define('forum/account/edit/password', [
 					});
 			} else {
 				if (!passwordsmatch) {
-					alerts.error('[[user:change_password_error_match]]');
+					alerts.error('[[user:change-password-error-match]]');
 				}
 
 				if (!passwordvalid) {
-					alerts.error('[[user:change_password_error]]');
+					alerts.error('[[user:change-password-error]]');
 				}
 			}
 			return false;
@@ -103,19 +103,14 @@ define('forum/account/edit/password', [
 
 	function showError(element, msg) {
 		translator.translate(msg, function (msg) {
-			element.html(msg);
-
-			element.parent()
-				.removeClass('show-success')
-				.addClass('show-danger');
+			element.html(msg).removeClass('text-success')
+				.addClass('text-danger');
 		});
 	}
 
 	function showSuccess(element) {
-		element.html('');
-		element.parent()
-			.removeClass('show-danger')
-			.addClass('show-success');
+		element.html('').removeClass('text-danger')
+			.addClass('text-success');
 	}
 
 	return AccountEditPassword;

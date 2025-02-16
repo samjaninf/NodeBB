@@ -4,6 +4,8 @@
 const io = require('socket.io-client');
 // eslint-disable-next-line no-redeclare
 const $ = require('jquery');
+// eslint-disable-next-line import/no-unresolved
+const { alert } = require('alerts');
 
 app = window.app || {};
 
@@ -14,6 +16,7 @@ app = window.app || {};
 		reconnectionAttempts: config.maxReconnectionAttempts,
 		reconnectionDelay: config.reconnectionDelay,
 		transports: config.socketioTransports,
+		autoConnect: false,
 		path: config.relative_path + '/socket.io',
 		query: {
 			_csrf: config.csrf_token,
@@ -46,11 +49,12 @@ app = window.app || {};
 		hooks = _hooks;
 		if (parseInt(app.user.uid, 10) >= 0) {
 			addHandlers();
+			socket.connect();
 		}
 	});
 
 	window.app.reconnect = () => {
-		if (socket.connected) {
+		if (socket.connected || parseInt(app.user.uid, 10) < 0) {
 			return;
 		}
 
@@ -109,27 +113,10 @@ app = window.app || {};
 				alerts.alert(params);
 			});
 		});
-		socket.on('event:deprecated_call', function (data) {
-			console.warn('[socket.io] ', data.eventName, 'is now deprecated in favour of', data.replacement);
+		socket.on('event:deprecated_call', (data) => {
+			console.warn('[socket.io]', data.eventName, 'is now deprecated', data.replacement ? `in favour of ${data.replacement}` : 'with no alternative planned.');
 		});
 
-		socket.removeAllListeners('event:nodebb.ready');
-		socket.on('event:nodebb.ready', function (data) {
-			if ((data.hostname === app.upstreamHost) && (!app.cacheBuster || app.cacheBuster !== data['cache-buster'])) {
-				app.cacheBuster = data['cache-buster'];
-				require(['alerts'], function (alerts) {
-					alerts.alert({
-						alert_id: 'forum_updated',
-						title: '[[global:updated.title]]',
-						message: '[[global:updated.message]]',
-						clickfn: function () {
-							window.location.reload();
-						},
-						type: 'warning',
-					});
-				});
-			}
-		});
 		socket.on('event:livereload', function () {
 			if (app.user.isAdmin && !ajaxify.currentPage.match(/admin/)) {
 				window.location.reload();
@@ -156,7 +143,7 @@ app = window.app || {};
 		});
 	}
 
-	function onConnect() {
+	async function onConnect() {
 		if (!reconnecting) {
 			hooks.fire('action:connected');
 		} else {
@@ -171,7 +158,19 @@ app = window.app || {};
 
 			reJoinCurrentRoom();
 
-			socket.emit('meta.reconnected');
+			const { 'cache-buster': hash, hostname } = await socket.emit('meta.reconnected');
+			if ((hostname === app.upstreamHost) && (!app.cacheBuster || app.cacheBuster !== hash)) {
+				app.cacheBuster = hash;
+				alert({
+					alert_id: 'forum_updated',
+					title: '[[global:updated.title]]',
+					message: '[[global:updated.message]]',
+					clickfn: function () {
+						window.location.reload();
+					},
+					type: 'warning',
+				});
+			}
 
 			hooks.fire('action:reconnected');
 

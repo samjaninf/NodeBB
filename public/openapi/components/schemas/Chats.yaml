@@ -16,6 +16,9 @@ RoomObject:
     userCount:
       type: number
       description: number of users in this chat room
+    messageCount:
+      type: number
+      description: number of messages sent in this chat room
     groups:
       type: array
       description: list of groups that can access the room
@@ -58,6 +61,9 @@ MessageObject:
         uid:
           type: number
           description: A user identifier
+        isLocal:
+          type: boolean
+          description: Whether the user belongs to the local installation or not.
         username:
           type: string
           description: A friendly name for a given user account
@@ -119,6 +125,9 @@ RoomUserList:
           uid:
             type: number
             description: A user identifier
+          isLocal:
+            type: boolean
+            description: Whether the user belongs to the local installation or not.
           username:
             type: string
             description: A friendly name for a given user account

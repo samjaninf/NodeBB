@@ -10,8 +10,8 @@ const notifications = require('../notifications');
 const privileges = require('../privileges');
 const plugins = require('../plugins');
 const translator = require('../translator');
+const topics = require('../topics');
 const user = require('./index');
-const utils = require('../utils');
 
 const UserNotifications = module.exports;
 
@@ -201,20 +201,18 @@ UserNotifications.deleteAll = async function (uid) {
 
 UserNotifications.sendTopicNotificationToFollowers = async function (uid, topicData, postData) {
 	try {
-		let followers = await db.getSortedSetRange(`followers:${uid}`, 0, -1);
-		followers = await privileges.categories.filterUids('read', topicData.cid, followers);
+		const [allFollowers, title] = await Promise.all([
+			db.getSortedSetRange(`followers:${uid}`, 0, -1),
+			topics.getTopicField(topicData.tid, 'title'),
+		]);
+		const followers = await privileges.categories.filterUids('read', topicData.cid, allFollowers);
 		if (!followers.length) {
 			return;
-		}
-		let { title } = topicData;
-		if (title) {
-			title = utils.decodeHTMLEntities(title);
-			title = title.replace(/,/g, '\\,');
 		}
 
 		const notifObj = await notifications.create({
 			type: 'new-topic',
-			bodyShort: `[[notifications:user_posted_topic, ${postData.user.displayname}, ${title}]]`,
+			bodyShort: translator.compile('notifications:user-posted-topic', postData.user.displayname, title),
 			bodyLong: postData.content,
 			pid: postData.pid,
 			path: `/post/${postData.pid}`,
@@ -247,7 +245,7 @@ UserNotifications.sendWelcomeNotification = async function (uid) {
 
 UserNotifications.sendNameChangeNotification = async function (uid, username) {
 	const notifObj = await notifications.create({
-		bodyShort: `[[user:username_taken_workaround, ${username}]]`,
+		bodyShort: `[[user:username-taken-workaround, ${username}]]`,
 		image: 'brand:logo',
 		nid: `username_taken:${uid}`,
 		datetime: Date.now(),

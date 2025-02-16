@@ -5,7 +5,9 @@
     "month": "ماه",
     "year": "سال",
     "alltime": "همه زمانها",
-    "no_recent_topics": "هیچ موضوع تازه‌ای نیست.",
-    "no_popular_topics": "هیچ موضوع پربازدیدی وجود ندارد",
-    "load-new-posts": "بارگذاری پست‌های جدید"
+    "no-recent-topics": "هیچ موضوع تازه‌ای نیست.",
+    "no-popular-topics": "هیچ موضوع پربازدیدی وجود ندارد",
+    "load-new-posts": "بارگذاری پست های جدید",
+    "uncategorized.title": "All known topics",
+    "uncategorized.intro": "This page shows a chronological listing of every topic that this forum has received.<br />The views and opinions expressed in the topics below are not moderated and may not represent the views and opinions of this website."
 }

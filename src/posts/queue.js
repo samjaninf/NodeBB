@@ -57,13 +57,13 @@ module.exports = function (Posts) {
 		}
 
 		// Filter by tid if present
-		if (utils.isNumber(filter.tid)) {
-			const tid = parseInt(filter.tid, 10);
-			postData = postData.filter(item => item.data.tid && parseInt(item.data.tid, 10) === tid);
+		if (filter.tid) {
+			const tid = String(filter.tid);
+			postData = postData.filter(item => item.data.tid && String(item.data.tid) === tid);
 		} else if (Array.isArray(filter.tid)) {
-			const tids = filter.tid.map(tid => parseInt(tid, 10));
+			const tids = filter.tid.map(String);
 			postData = postData.filter(
-				item => item.data.tid && tids.includes(parseInt(item.data.tid, 10))
+				item => item.data.tid && tids.includes(String(item.data.tid))
 			);
 		}
 
@@ -96,9 +96,16 @@ module.exports = function (Posts) {
 
 		if (!isPrivileged && reputation < meta.config['min:rep:post-links']) {
 			const parsed = await plugins.hooks.fire('filter:parse.raw', String(content));
-			if (parsed.match(/<a[^>]*>([^<]+)<\/a>/g)) {
-				return false;
+			const matches = parsed.matchAll(/<a[^>]*href="([^"]+)"[^>]*>/g);
+			let external = 0;
+			for (const [, href] of matches) {
+				const internal = utils.isInternalURI(new URL(href, nconf.get('url')), new URL(nconf.get('url')), nconf.get('relative_path'));
+				if (!internal) {
+					external += 1;
+				}
 			}
+
+			return external === 0;
 		}
 		return true;
 	};
@@ -196,7 +203,7 @@ module.exports = function (Posts) {
 			type: 'post-queue',
 			nid: `post-queue-${id}`,
 			mergeId: 'post-queue',
-			bodyShort: '[[notifications:post_awaiting_review]]',
+			bodyShort: '[[notifications:post-awaiting-review]]',
 			bodyLong: bodyLong,
 			path: `/post-queue/${id}`,
 		});

@@ -6,6 +6,9 @@ const plugins = require('../plugins');
 const meta = require('../meta');
 const privileges = require('../privileges');
 const user = require('../user');
+const notifications = require('../notifications');
+const translator = require('../translator');
+const batch = require('../batch');
 
 module.exports = function (Categories) {
 	Categories.getCategoryTopics = async function (data) {
@@ -24,14 +27,9 @@ module.exports = function (Categories) {
 	};
 
 	Categories.getTopicIds = async function (data) {
-		const dataForPinned = { ...data };
-		dataForPinned.start = 0;
-		dataForPinned.stop = -1;
-
-		const [pinnedTids, set, direction] = await Promise.all([
-			Categories.getPinnedTids(dataForPinned),
+		const [pinnedTids, set] = await Promise.all([
+			Categories.getPinnedTids({ ...data, start: 0, stop: -1 }),
 			Categories.buildTopicsSortedSet(data),
-			Categories.getSortedSetRangeDirection(data.sort),
 		]);
 
 		const totalPinnedCount = pinnedTids.length;
@@ -63,12 +61,11 @@ module.exports = function (Categories) {
 
 		const stop = data.stop === -1 ? data.stop : start + normalTidsToGet - 1;
 		let normalTids;
-		const reverse = direction === 'highest-to-lowest';
 		if (Array.isArray(set)) {
 			const weights = set.map((s, index) => (index ? 0 : 1));
-			normalTids = await db[reverse ? 'getSortedSetRevIntersect' : 'getSortedSetIntersect']({ sets: set, start: start, stop: stop, weights: weights });
+			normalTids = await db.getSortedSetRevIntersect({ sets: set, start: start, stop: stop, weights: weights });
 		} else {
-			normalTids = await db[reverse ? 'getSortedSetRevRange' : 'getSortedSetRange'](set, start, stop);
+			normalTids = await db.getSortedSetRevRange(set, start, stop);
 		}
 		normalTids = normalTids.filter(tid => !pinnedTids.includes(tid));
 		return pinnedTidsOnPage.concat(normalTids);
@@ -92,39 +89,46 @@ module.exports = function (Categories) {
 	};
 
 	Categories.buildTopicsSortedSet = async function (data) {
-		const { cid } = data;
-		let set = `cid:${cid}:tids`;
-		const sort = data.sort || (data.settings && data.settings.categoryTopicSort) || meta.config.categoryTopicSort || 'newest_to_oldest';
+		const { cid, uid } = data;
+		const sort = data.sort || (data.settings && data.settings.categoryTopicSort) || meta.config.categoryTopicSort || 'recently_replied';
+		const sortToSet = {
+			recently_replied: `cid:${cid}:tids`,
+			recently_created: `cid:${cid}:tids:create`,
+			most_posts: `cid:${cid}:tids:posts`,
+			most_votes: `cid:${cid}:tids:votes`,
+			most_views: `cid:${cid}:tids:views`,
+		};
 
-		if (sort === 'most_posts') {
-			set = `cid:${cid}:tids:posts`;
-		} else if (sort === 'most_votes') {
-			set = `cid:${cid}:tids:votes`;
-		} else if (sort === 'most_views') {
-			set = `cid:${cid}:tids:views`;
-		}
+		const set = new Set([sortToSet.hasOwnProperty(sort) ? sortToSet[sort] : `cid:${cid}:tids`]);
 
 		if (data.tag) {
 			if (Array.isArray(data.tag)) {
-				set = [set].concat(data.tag.map(tag => `tag:${tag}:topics`));
+				data.tag.forEach((tag) => {
+					set.add(`tag:${tag}:topics`);
+				});
 			} else {
-				set = [set, `tag:${data.tag}:topics`];
+				set.add(`tag:${data.tag}:topics`);
 			}
 		}
 
 		if (data.targetUid) {
-			set = (Array.isArray(set) ? set : [set]).concat([`cid:${cid}:uid:${data.targetUid}:tids`]);
+			set.add(`cid:${cid}:uid:${data.targetUid}:tids`);
 		}
 
+		if (parseInt(cid, 10) === -1 && uid > 0) {
+			set.add(`uid:${uid}:inbox`);
+		}
+		const setValue = Array.from(set);
 		const result = await plugins.hooks.fire('filter:categories.buildTopicsSortedSet', {
-			set: set,
+			set: set.size > 1 ? setValue : setValue[0],
 			data: data,
 		});
 		return result && result.set;
 	};
 
 	Categories.getSortedSetRangeDirection = async function (sort) {
-		sort = sort || 'newest_to_oldest';
+		console.warn('[deprecated] Will be removed in 4.x');
+		sort = sort || 'recently_replied';
 		const direction = ['newest_to_oldest', 'most_posts', 'most_votes', 'most_views'].includes(sort) ? 'highest-to-lowest' : 'lowest-to-highest';
 		const result = await plugins.hooks.fire('filter:categories.getSortedSetRangeDirection', {
 			sort: sort,
@@ -161,13 +165,14 @@ module.exports = function (Categories) {
 
 		topics.forEach((topic) => {
 			if (!topic.scheduled && topic.deleted && !topic.isOwner) {
-				topic.title = '[[topic:topic_is_deleted]]';
+				topic.title = '[[topic:topic-is-deleted]]';
 				if (topic.hasOwnProperty('titleRaw')) {
-					topic.titleRaw = '[[topic:topic_is_deleted]]';
+					topic.titleRaw = '[[topic:topic-is-deleted]]';
 				}
 				topic.slug = topic.tid;
 				topic.teaser = null;
 				topic.noAnchor = true;
+				topic.unread = false;
 				topic.tags = [];
 			}
 		});
@@ -207,4 +212,43 @@ module.exports = function (Categories) {
 		const now = Date.now();
 		return tids.filter((tid, index) => tid && (!scores[index] || scores[index] <= now));
 	}
+
+	Categories.notifyCategoryFollowers = async (postData, exceptUid) => {
+		const { cid } = postData.topic;
+		const followers = [];
+		await batch.processSortedSet(`cid:${cid}:uid:watch:state`, async (uids) => {
+			followers.push(
+				...await privileges.categories.filterUids('topics:read', cid, uids)
+			);
+		}, {
+			batch: 500,
+			min: Categories.watchStates.watching,
+			max: Categories.watchStates.watching,
+		});
+		const index = followers.indexOf(String(exceptUid));
+		if (index !== -1) {
+			followers.splice(index, 1);
+		}
+		if (!followers.length) {
+			return;
+		}
+
+		const { displayname } = postData.user;
+		const categoryName = await Categories.getCategoryField(cid, 'name');
+		const notifBase = 'notifications:user-posted-topic-in-category';
+
+		const bodyShort = translator.compile(notifBase, displayname, categoryName);
+
+		const notification = await notifications.create({
+			type: 'new-topic-in-category',
+			nid: `new_topic:tid:${postData.topic.tid}:uid:${exceptUid}`,
+			bodyShort: bodyShort,
+			bodyLong: postData.content,
+			pid: postData.pid,
+			path: `/post/${encodeURIComponent(postData.pid)}`,
+			tid: postData.topic.tid,
+			from: exceptUid,
+		});
+		notifications.push(notification, followers);
+	};
 };

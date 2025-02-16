@@ -12,7 +12,7 @@ define('categorySelector', [
 		options = options || {};
 		const onSelect = options.onSelect || function () {};
 
-		options.states = options.states || ['watching', 'notwatching', 'ignoring'];
+		options.states = options.states || ['watching', 'tracking', 'notwatching', 'ignoring'];
 		options.template = options.template || 'partials/category/selector-dropdown-left';
 		hooks.fire('action:category.selector.options', { el: el, options: options });
 
@@ -77,7 +77,7 @@ define('categorySelector', [
 		options.onSubmit = options.onSubmit || function () {};
 		app.parseAndTranslate('admin/partials/categories/select-category', { message: options.message }, function (html) {
 			const modal = bootbox.dialog({
-				title: options.title || '[[modules:composer.select_category]]',
+				title: options.title || '[[modules:composer.select-category]]',
 				message: html,
 				buttons: {
 					save: {

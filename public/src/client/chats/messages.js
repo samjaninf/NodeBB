@@ -17,20 +17,21 @@ define('forum/chats/messages', [
 		const chatContent = inputEl.parents(`[component="chat/messages"][data-roomid="${roomId}"]`);
 		inputEl.val('').trigger('input');
 
-		messages.updateRemainingLength(inputEl.parent());
+		const chatComposer = inputEl.parents('[component="chat/composer"]');
+		messages.updateRemainingLength(chatComposer);
 		messages.updateTextAreaHeight(chatContent);
 		const payload = { roomId, message };
 		({ roomId, message } = await hooks.fire('filter:chat.send', payload));
-		const replyToEl = inputEl.parents('[component="chat/composer"]')
-			.find('[component="chat/composer/replying-to"]');
+		const replyToEl = chatComposer.find('[component="chat/composer/replying-to"]');
 		const toMid = replyToEl.attr('data-tomid');
+
 		api.post(`/chats/${roomId}`, { message, toMid: toMid }).then(() => {
 			hooks.fire('action:chat.sent', { roomId, message });
 			replyToEl.addClass('hidden');
 			replyToEl.attr('data-tomid', '');
 		}).catch((err) => {
 			inputEl.val(message).trigger('input');
-			messages.updateRemainingLength(inputEl.parent());
+			messages.updateRemainingLength(chatComposer);
 			messages.updateTextAreaHeight(chatContent);
 			if (err.message === '[[error:email-not-confirmed-chat]]') {
 				return messagesModule.showEmailConfirmWarning(err.message);
@@ -49,7 +50,10 @@ define('forum/chats/messages', [
 	messages.updateRemainingLength = function (parent) {
 		const element = parent.find('[component="chat/input"]');
 		parent.find('[component="chat/message/length"]').text(element.val().length);
-		parent.find('[component="chat/message/remaining"]').text(config.maximumChatMessageLength - element.val().length);
+		const remainingLength = config.maximumChatMessageLength - element.val().length;
+		parent.find('[component="chat/message/remaining"]').text(remainingLength)
+			.toggleClass('fw-bold text-danger', remainingLength < 0)
+			.toggleClass('text-muted', remainingLength >= 0);
 		hooks.fire('action:chat.updateRemainingLength', {
 			parent: parent,
 		});
@@ -82,6 +86,7 @@ define('forum/chats/messages', [
 		if (!Array.isArray(data)) {
 			data.newSet = data.toMid || lastSpeaker !== parseInt(data.fromuid, 10) ||
 				parseInt(data.timestamp, 10) > parseInt(lasttimestamp, 10) + (1000 * 60 * 3);
+			data.index = parseInt(lastMsgEl.attr('data-index'), 10) + 1;
 		}
 
 		messages.parseMessage(data, function (html) {
@@ -92,6 +97,7 @@ define('forum/chats/messages', [
 	function onMessagesParsed(chatContentEl, html, msgData) {
 		const newMessage = $(html);
 		const isAtBottom = messages.isAtBottom(chatContentEl);
+		newMessage.addClass('new');
 		newMessage.appendTo(chatContentEl);
 		messages.onMessagesAddedToDom(newMessage);
 		if (isAtBottom || msgData.self) {
@@ -101,6 +107,7 @@ define('forum/chats/messages', [
 			if (chatMsgEls.length > 150) {
 				const removeCount = chatMsgEls.length - 150;
 				chatMsgEls.slice(0, removeCount).remove();
+				chatContentEl.find('[data-mid].new').removeClass('new');
 			}
 		}
 
@@ -115,6 +122,7 @@ define('forum/chats/messages', [
 		messageEls.find('img:not(.emoji)').each(function () {
 			images.wrapImageInLink($(this));
 		});
+		hooks.fire('action:chat.onMessagesAddedToDom', { messageEls });
 	};
 
 	messages.parseMessage = function (data, callback) {
@@ -148,6 +156,7 @@ define('forum/chats/messages', [
 
 	messages.scrollToBottom = function (containerEl) {
 		if (containerEl && containerEl.length) {
+			containerEl.attr('data-ignore-next-scroll', 1);
 			containerEl.scrollTop(containerEl[0].scrollHeight - containerEl.height());
 			containerEl.parents('[component="chat/message/window"]')
 				.find('[component="chat/messages/scroll-up-alert"]')
@@ -175,7 +184,7 @@ define('forum/chats/messages', [
 		const replyToEl = composerEl.find('[component="chat/composer/replying-to"]');
 		replyToEl.attr('data-tomid', mid)
 			.find('[component="chat/composer/replying-to-text"]')
-			.translateText(`[[modules:chat.replying-to, ${msgEl.attr('data-username')}]]`);
+			.translateText(`[[modules:chat.replying-to, ${msgEl.attr('data-displayname')}]]`);
 		replyToEl.removeClass('hidden');
 		replyToEl.find('[component="chat/composer/replying-to-cancel"]').off('click')
 			.on('click', () => {
@@ -190,7 +199,7 @@ define('forum/chats/messages', [
 	};
 
 	messages.prepEdit = async function (msgEl, mid, roomId) {
-		const raw = await socket.emit('modules.chats.getRaw', { mid: mid, roomId: roomId });
+		const { content: raw } = await api.get(`/chats/${roomId}/messages/${mid}/raw`);
 		const editEl = await app.parseAndTranslate('partials/chats/edit-message', {
 			rawContent: raw,
 		});
@@ -273,7 +282,13 @@ define('forum/chats/messages', [
 			messages.parseMessage(message, function (html) {
 				const msgEl = components.get('chat/message', message.mid);
 				if (msgEl.length) {
-					msgEl.replaceWith(html);
+					const componentsToReplace = [
+						'[component="chat/message/body"]',
+						'[component="chat/message/edited"]',
+					];
+					componentsToReplace.forEach((cmp) => {
+						msgEl.find(cmp).replaceWith(html.find(cmp));
+					});
 					messages.onMessagesAddedToDom(components.get('chat/message', message.mid));
 				}
 				const parentEl = $(`[component="chat/message/parent"][data-parent-mid="${message.mid}"]`);
@@ -327,19 +342,19 @@ define('forum/chats/messages', [
 	}
 
 	messages.delete = function (messageId, roomId) {
-		bootbox.confirm('[[modules:chat.delete_message_confirm]]', function (ok) {
+		bootbox.confirm('[[modules:chat.delete-message-confirm]]', function (ok) {
 			if (!ok) {
 				return;
 			}
 
-			api.del(`/chats/${roomId}/messages/${messageId}`, {}).then(() => {
+			api.del(`/chats/${roomId}/messages/${encodeURIComponent(messageId)}`, {}).then(() => {
 				components.get('chat/message', messageId).toggleClass('deleted', true);
 			}).catch(alerts.error);
 		});
 	};
 
 	messages.restore = function (messageId, roomId) {
-		api.post(`/chats/${roomId}/messages/${messageId}`, {}).then(() => {
+		api.post(`/chats/${roomId}/messages/${encodeURIComponent(messageId)}`, {}).then(() => {
 			components.get('chat/message', messageId).toggleClass('deleted', false);
 		}).catch(alerts.error);
 	};

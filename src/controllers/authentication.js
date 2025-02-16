@@ -49,7 +49,10 @@ async function registerAndLoginUser(req, res, userData) {
 
 	const uid = await user.create(userData);
 	if (res.locals.processLogin) {
-		await authenticationController.doLogin(req, uid);
+		const hasLoginPrivilege = await privileges.global.can('local:login', uid);
+		if (hasLoginPrivilege) {
+			await authenticationController.doLogin(req, uid);
+		}
 	}
 
 	// Distinguish registrations through invites from direct ones
@@ -61,7 +64,10 @@ async function registerAndLoginUser(req, res, userData) {
 		]);
 	}
 	await user.deleteInvitationKey(userData.email, userData.token);
-	const next = req.session.returnTo || `${nconf.get('relative_path')}/`;
+	let next = req.session.returnTo || `${nconf.get('relative_path')}/`;
+	if (req.loggedIn && next === `${nconf.get('relative_path')}/login`) {
+		next = `${nconf.get('relative_path')}/`;
+	}
 	const complete = await plugins.hooks.fire('filter:register.complete', { uid: uid, next: next });
 	req.session.returnTo = complete.next;
 	return complete;
@@ -93,7 +99,7 @@ authenticationController.register = async function (req, res) {
 		}
 
 		if (userData.password !== userData['password-confirm']) {
-			throw new Error('[[user:change_password_error_match]]');
+			throw new Error('[[user:change-password-error-match]]');
 		}
 
 		if (userData.password.length > 512) {
@@ -218,6 +224,7 @@ authenticationController.registerAbort = async (req, res) => {
 
 		const { interstitials } = await user.interstitials.get(req, req.session.registration);
 		if (!interstitials.length) {
+			delete req.session.registration;
 			return res.redirect(nconf.get('relative_path') + (req.session.returnTo || '/'));
 		}
 	}
@@ -341,7 +348,7 @@ authenticationController.doLogin = async function (req, uid) {
 	await authenticationController.onSuccessfulLogin(req, uid);
 };
 
-authenticationController.onSuccessfulLogin = async function (req, uid) {
+authenticationController.onSuccessfulLogin = async function (req, uid, trackSession = true) {
 	/*
 	 * Older code required that this method be called from within the SSO plugin.
 	 * That behaviour is no longer required, onSuccessfulLogin is now automatically
@@ -379,7 +386,7 @@ authenticationController.onSuccessfulLogin = async function (req, uid) {
 			new Promise((resolve) => {
 				req.session.save(resolve);
 			}),
-			user.auth.addSession(uid, req.sessionID, uuid),
+			trackSession ? user.auth.addSession(uid, req.sessionID) : undefined,
 			user.updateLastOnlineTime(uid),
 			user.onUserOnline(uid, Date.now()),
 			analytics.increment('logins'),

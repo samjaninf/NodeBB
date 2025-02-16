@@ -1,5 +1,6 @@
 {
 	"state": "Stav",
+	"report": "Report",
 	"reports": "Reports",
 	"first-reported": "First Reported",
 	"no-flags": "Hurá! Neboli nájdené žiadne príznaky.",
@@ -8,6 +9,8 @@
 	"update": "Aktualizovať",
 	"updated": "Aktualizované",
 	"resolved": "Resolved",
+	"report-added": "Added",
+	"report-rescinded": "Rescinded",
 	"target-purged": "Obsah, na ktorý sa vzťahuje toto označenie, bol odstránený a už nie je k dispozícii.",
 	"target-aboutme-empty": "This user has no &quot;About Me&quot; set.",
 
@@ -81,12 +84,18 @@
 	"modal-reason-offensive": "Urážlivý",
 	"modal-reason-other": "Iné (popíšte nižšie)",
 	"modal-reason-custom": "Dôvod oznamovania tohto obsahu...",
+	"modal-notify-remote": "Forward this report to %1",
 	"modal-submit": "Odoslať správu",
 	"modal-submit-success": "Obsah bol označený na moderovanie.",
 
+	"modal-confirm-rescind": "Rescind Report?",
+
 	"bulk-actions": "Bulk Actions",
 	"bulk-resolve": "Resolve Flag(s)",
+	"confirm-purge": "Are you sure you want to permanently delete these flags?",
+	"purge-cancelled": "Flag Purge Cancelled",
+	"bulk-purge": "Purge Flag(s)",
 	"bulk-success": "%1 flags updated",
-	"flagged-timeago-readable": "Flagged <span class=\"timeago\" title=\"%1\"></span> (%2)",
+	"flagged-timeago": "Flagged <span class=\"timeago\" title=\"%1\"></span>",
   	"auto-flagged": "[Auto Flagged] Received %1 downvotes."
 }

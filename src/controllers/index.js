@@ -6,12 +6,14 @@ const validator = require('validator');
 const meta = require('../meta');
 const user = require('../user');
 const plugins = require('../plugins');
-const privileges = require('../privileges');
+const privilegesHelpers = require('../privileges/helpers');
 const helpers = require('./helpers');
 
 const Controllers = module.exports;
 
 Controllers.ping = require('./ping');
+Controllers['well-known'] = require('./well-known');
+Controllers.activitypub = require('./activitypub');
 Controllers.home = require('./home');
 Controllers.topics = require('./topics');
 Controllers.posts = require('./posts');
@@ -34,6 +36,7 @@ Controllers.globalMods = require('./globalmods');
 Controllers.mods = require('./mods');
 Controllers.sitemap = require('./sitemap');
 Controllers.osd = require('./osd');
+Controllers['service-worker'] = require('./service-worker');
 Controllers['404'] = require('./404');
 Controllers.errors = require('./errors');
 Controllers.composer = require('./composer');
@@ -60,11 +63,11 @@ Controllers.reset = async function (req, res) {
 			minimumPasswordStrength: meta.config.minimumPasswordStrength,
 			breadcrumbs: helpers.buildBreadcrumbs([
 				{
-					text: '[[reset_password:reset_password]]',
+					text: '[[reset_password:reset-password]]',
 					url: '/reset',
 				},
 				{
-					text: '[[reset_password:update_password]]',
+					text: '[[reset_password:update-password]]',
 				},
 			]),
 			title: '[[pages:reset]]',
@@ -85,7 +88,7 @@ Controllers.reset = async function (req, res) {
 		res.render('reset', {
 			code: null,
 			breadcrumbs: helpers.buildBreadcrumbs([{
-				text: '[[reset_password:reset_password]]',
+				text: '[[reset_password:reset-password]]',
 			}]),
 			title: '[[pages:reset]]',
 		});
@@ -123,7 +126,8 @@ Controllers.login = async function (req, res) {
 	data.title = '[[pages:login]]';
 	data.allowPasswordReset = !meta.config['password:disableEdit'];
 
-	const hasLoginPrivilege = await privileges.global.canGroup('local:login', 'registered-users');
+	const loginPrivileges = await privilegesHelpers.getGroupPrivileges(0, ['groups:local:login']);
+	const hasLoginPrivilege = !!loginPrivileges.find(privilege => privilege.privileges['groups:local:login']);
 	data.allowLocalLogin = hasLoginPrivilege || parseInt(req.query.local, 10) === 1;
 
 	if (!data.allowLocalLogin && !data.allowRegistration && data.alternate_logins && data.authentication.length === 1) {
@@ -219,20 +223,35 @@ Controllers.registerInterstitial = async function (req, res, next) {
 	}
 };
 
-Controllers.confirmEmail = async (req, res, next) => {
+Controllers.confirmEmail = async (req, res) => {
+	function renderPage(opts = {}) {
+		res.render('confirm', {
+			title: '[[pages:confirm]]',
+			...opts,
+		});
+	}
+
+	if (req.method === 'HEAD') {
+		return renderPage();
+	}
 	try {
+		if (req.loggedIn) {
+			const emailValidated = await user.getUserField(req.uid, 'email:confirmed');
+			if (emailValidated) {
+				return renderPage({ alreadyValidated: true });
+			}
+		}
 		await user.email.confirmByCode(req.params.code, req.session.id);
 		if (req.session.registration) {
 			// After confirmation, no need to send user back to email change form
 			delete req.session.registration.updateEmail;
 		}
 
-		res.render('confirm', {
-			title: '[[pages:confirm]]',
-		});
+		renderPage();
 	} catch (e) {
-		if (e.message === '[[error:invalid-data]]') {
-			return next();
+		if (e.message === '[[error:invalid-data]]' || e.message === '[[error:confirm-email-expired]]') {
+			renderPage({ error: true });
+			return;
 		}
 
 		throw e;
@@ -308,12 +327,14 @@ Controllers.manifest = async function (req, res) {
 	if (meta.config['brand:maskableIcon']) {
 		manifest.icons.push({
 			src: `${nconf.get('relative_path')}/assets/uploads/system/maskableicon-orig.png`,
+			sizes: '512x512',
 			type: 'image/png',
 			purpose: 'maskable',
 		});
 	} else if (meta.config['brand:touchIcon']) {
 		manifest.icons.push({
 			src: `${nconf.get('relative_path')}/assets/uploads/system/touchicon-orig.png`,
+			sizes: '512x512',
 			type: 'image/png',
 			purpose: 'maskable',
 		});
@@ -343,7 +364,7 @@ Controllers.outgoing = function (req, res, next) {
 		outgoing: validator.escape(String(url)),
 		title: meta.config.title,
 		breadcrumbs: helpers.buildBreadcrumbs([{
-			text: '[[notifications:outgoing_link]]',
+			text: '[[notifications:outgoing-link]]',
 		}]),
 	});
 };

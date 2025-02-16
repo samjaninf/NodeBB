@@ -32,6 +32,9 @@ apiController.loadConfig = async function (req) {
 		assetBaseUrl: asset_base_url, // deprecate in 1.20.x
 		siteTitle: validator.escape(String(meta.config.title || meta.config.browserTitle || 'NodeBB')),
 		browserTitle: validator.escape(String(meta.config.browserTitle || meta.config.title || 'NodeBB')),
+		description: validator.escape(String(meta.config.description || '')),
+		keywords: validator.escape(String(meta.config.keywords || '')),
+		'brand:logo': validator.escape(String(meta.config['brand:logo'])),
 		titleLayout: (meta.config.titleLayout || '{pageTitle} | {browserTitle}').replace(/{/g, '&#123;').replace(/}/g, '&#125;'),
 		showSiteTitle: meta.config.showSiteTitle === 1,
 		maintenanceMode: meta.config.maintenanceMode === 1,
@@ -69,7 +72,7 @@ apiController.loadConfig = async function (req) {
 		uid: req.uid,
 		'cache-buster': meta.config['cache-buster'] || '',
 		topicPostSort: meta.config.topicPostSort || 'oldest_to_newest',
-		categoryTopicSort: meta.config.categoryTopicSort || 'newest_to_oldest',
+		categoryTopicSort: meta.config.categoryTopicSort || 'recently_replied',
 		csrf_token: req.uid >= 0 ? generateToken(req) : false,
 		searchEnabled: plugins.hooks.hasListeners('filter:search.query'),
 		searchDefaultInQuick: meta.config.searchDefaultInQuick || 'titles',
@@ -82,19 +85,23 @@ apiController.loadConfig = async function (req) {
 			enabled: meta.config.cookieConsentEnabled === 1,
 			message: translator.escape(validator.escape(meta.config.cookieConsentMessage || '[[global:cookies.message]]')).replace(/\\/g, '\\\\'),
 			dismiss: translator.escape(validator.escape(meta.config.cookieConsentDismiss || '[[global:cookies.accept]]')).replace(/\\/g, '\\\\'),
-			link: translator.escape(validator.escape(meta.config.cookieConsentLink || '[[global:cookies.learn_more]]')).replace(/\\/g, '\\\\'),
+			link: translator.escape(validator.escape(meta.config.cookieConsentLink || '[[global:cookies.learn-more]]')).replace(/\\/g, '\\\\'),
 			link_url: translator.escape(validator.escape(meta.config.cookieConsentLinkUrl || 'https://www.cookiesandyou.com')).replace(/\\/g, '\\\\'),
 		},
 		thumbs: {
 			size: meta.config.topicThumbSize,
 		},
-		iconBackgrounds: await user.getIconBackgrounds(req.uid),
 		emailPrompt: meta.config.emailPrompt,
-		useragent: req.useragent,
+		useragent: {
+			isSafari: req.useragent && req.useragent.isSafari,
+		},
 		fontawesome: {
 			pro: fontawesome_pro,
 			styles: fontawesome_styles,
 			version: fontawesome_version,
+		},
+		activitypub: {
+			probe: meta.config.activitypubEnabled && meta.config.activitypubProbe,
 		},
 	};
 

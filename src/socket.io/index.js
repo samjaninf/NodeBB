@@ -14,6 +14,8 @@ const logger = require('../logger');
 const plugins = require('../plugins');
 const ratelimit = require('../middleware/ratelimit');
 const blacklist = require('../meta/blacklist');
+const als = require('../als');
+const apiHelpers = require('../api/helpers');
 
 const Namespaces = Object.create(null);
 
@@ -88,8 +90,7 @@ function onConnection(socket) {
 	onConnect(socket);
 	socket.onAny((event, ...args) => {
 		const payload = { event: event, ...deserializePayload(args) };
-		const als = require('../als');
-		const apiHelpers = require('../api/helpers');
+
 		als.run({
 			uid: socket.uid,
 			req: apiHelpers.buildReqObject(socket, payload),
@@ -131,10 +132,10 @@ async function onConnect(socket) {
 		return;
 	}
 
-	if (socket.uid) {
+	if (socket.uid > 0) {
 		socket.join(`uid_${socket.uid}`);
 		socket.join('online_users');
-	} else {
+	} else if (socket.uid === 0) {
 		socket.join('online_guests');
 	}
 
@@ -211,7 +212,7 @@ async function onMessage(socket, payload) {
 			});
 		}
 	} catch (err) {
-		winston.error(`${event}\n${err.stack ? err.stack : err.message}`);
+		winston.debug(`${event}\n${err.stack ? err.stack : err.message}`);
 		callback({ message: err.message });
 	}
 }
@@ -241,10 +242,6 @@ async function checkMaintenance(socket) {
 	throw new Error(`[[pages:maintenance.text, ${validator.escape(String(meta.config.title || 'NodeBB'))}]]`);
 }
 
-const getSessionAsync = util.promisify(
-	(sid, callback) => db.sessionStore.get(sid, (err, sessionObj) => callback(err, sessionObj || null))
-);
-
 async function validateSession(socket, errorMsg) {
 	const req = socket.request;
 	const { sessionId } = await plugins.hooks.fire('filter:sockets.sessionId', {
@@ -256,8 +253,7 @@ async function validateSession(socket, errorMsg) {
 		return;
 	}
 
-	const sessionData = await getSessionAsync(sessionId);
-
+	const sessionData = await db.sessionStoreGet(sessionId);
 	if (!sessionData) {
 		throw new Error(errorMsg);
 	}
@@ -283,7 +279,7 @@ async function authorize(request, callback) {
 		request: request,
 	});
 
-	const sessionData = await getSessionAsync(sessionId);
+	const sessionData = await db.sessionStoreGet(sessionId);
 	request.session = sessionData;
 	let uid = 0;
 	if (sessionData && sessionData.passport && sessionData.passport.user) {
@@ -334,5 +330,9 @@ Sockets.warnDeprecated = (socket, replacement) => {
 			replacement: replacement,
 		});
 	}
-	winston.warn(`[deprecated]\n ${new Error('-').stack.split('\n').slice(2, 5).join('\n')}\n     use ${replacement}`);
+	winston.warn([
+		'[deprecated]',
+		`${new Error('-').stack.split('\n').slice(2, 5).join('\n')}`,
+		`      ${replacement ? `use ${replacement}` : 'there is no replacement for this call.'}`,
+	].join('\n'));
 };

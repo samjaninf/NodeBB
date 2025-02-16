@@ -5,7 +5,9 @@
     "month": "Ay",
     "year": "Yıl",
     "alltime": "Hepsi",
-    "no_recent_topics": "Güncel konu yok.",
-    "no_popular_topics": "Popüler konu yok.",
-    "load-new-posts": "Yeni iletileri yükle"
+    "no-recent-topics": "Güncel konu yok.",
+    "no-popular-topics": "Popüler konu yok.",
+    "load-new-posts": "Yeni iletileri yükle",
+    "uncategorized.title": "All known topics",
+    "uncategorized.intro": "This page shows a chronological listing of every topic that this forum has received.<br />The views and opinions expressed in the topics below are not moderated and may not represent the views and opinions of this website."
 }

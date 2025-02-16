@@ -66,6 +66,21 @@ Users.changePicture = async (req, res) => {
 	helpers.formatApiResponse(200, res);
 };
 
+Users.getStatus = async (req, res) => {
+	helpers.formatApiResponse(200, res, await api.users.getStatus(req, { ...req.params }));
+};
+
+Users.checkStatus = async (req, res) => {
+	const { uid, status } = req.params;
+	const { status: current } = await api.users.getStatus(req, { uid });
+
+	helpers.formatApiResponse(current === status ? 200 : 404, res);
+};
+
+Users.getPrivateRoomId = async (req, res) => {
+	helpers.formatApiResponse(200, res, await api.users.getPrivateRoomId(req, { ...req.params }));
+};
+
 Users.updateSettings = async (req, res) => {
 	const settings = await api.users.updateSettings(req, { ...req.body, uid: req.params.uid });
 	helpers.formatApiResponse(200, res, settings);
@@ -77,12 +92,31 @@ Users.changePassword = async (req, res) => {
 };
 
 Users.follow = async (req, res) => {
-	await api.users.follow(req, req.params);
+	const remote = String(req.params.uid).includes('@');
+	if (remote) {
+		await api.activitypub.follow(req, {
+			type: 'uid',
+			id: req.uid,
+			actor: req.params.uid,
+		});
+	} else {
+		await api.users.follow(req, req.params);
+	}
+
 	helpers.formatApiResponse(200, res);
 };
 
 Users.unfollow = async (req, res) => {
-	await api.users.unfollow(req, req.params);
+	const remote = String(req.params.uid).includes('@');
+	if (remote) {
+		await api.activitypub.unfollow(req, {
+			type: 'uid',
+			id: req.uid,
+			actor: req.params.uid,
+		});
+	} else {
+		await api.users.unfollow(req, req.params);
+	}
 	helpers.formatApiResponse(200, res);
 };
 

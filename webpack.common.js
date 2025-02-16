@@ -16,6 +16,7 @@ if (relativePath === undefined) {
 	relativePath = urlObject.pathname !== '/' ? urlObject.pathname.replace(/\/+$/, '') : '';
 }
 
+/** @type { import('webpack').Configuration } */
 module.exports = {
 	plugins: [],
 	entry: {
@@ -59,7 +60,6 @@ module.exports = {
 			admin: path.resolve(__dirname, 'build/public/src/admin'),
 			vendor: path.resolve(__dirname, 'public/vendor'),
 			benchpress: path.resolve(__dirname, 'node_modules/benchpressjs'),
-			Chart: path.resolve(__dirname, 'node_modules/chart.js'),
 			Sortable: path.resolve(__dirname, 'node_modules/sortablejs'),
 			cropper: path.resolve(__dirname, 'node_modules/cropperjs'),
 			'jquery-ui/widgets': path.resolve(__dirname, 'node_modules/jquery-ui/ui/widgets'),

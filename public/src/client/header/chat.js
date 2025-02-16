@@ -1,16 +1,12 @@
 'use strict';
 
 define('forum/header/chat', [
-	'components', 'hooks',
-], function (components, hooks) {
+	'components', 'hooks', 'api',
+], function (components, hooks, api) {
 	const chat = {};
 
 	chat.prepareDOM = function () {
 		const chatsToggleEl = $('[component="chat/dropdown"]');
-		if (!chatsToggleEl.length) {
-			return;
-		}
-
 		chatsToggleEl.on('show.bs.dropdown', (ev) => {
 			requireAndCall('loadChatsDropdown', $(ev.target).parent().find('[component="chat/list"]'));
 		});
@@ -42,9 +38,10 @@ define('forum/header/chat', [
 					return;
 				}
 				chatPage.markChatPageElUnread(data);
+				chatPage.updateTeaser(data.roomId, data.teaser);
 			}
 
-			let count = await socket.emit('modules.chats.getUnreadCount', {});
+			let { count } = await api.get('/chats/unread');
 			const chatIcon = components.get('chat/icon');
 			count = Math.max(0, count);
 			chatIcon.toggleClass('fa-comment', count > 0)

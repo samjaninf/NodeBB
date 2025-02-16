@@ -39,14 +39,15 @@ Our minimalist "Harmony" theme gets you going right away, no coding experience r
 
 NodeBB requires the following software to be installed:
 
-* A version of Node.js at least 16 or greater ([installation/upgrade instructions](https://github.com/nodesource/distributions))
+* A version of Node.js at least 18 or greater ([installation/upgrade instructions](https://github.com/nodesource/distributions))
 * MongoDB, version 3.6 or greater **or** Redis, version 2.8.9 or greater
 * If you are using [clustering](https://docs.nodebb.org/configuring/scaling/) you need Redis installed and configured.
 * nginx, version 1.3.13 or greater (**only if** intending to use nginx to proxy requests to a NodeBB)
 
 ## Installation
 
-[Please refer to platform-specific installation documentation](https://docs.nodebb.org/installing/os)
+[Please refer to platform-specific installation documentation](https://docs.nodebb.org/installing/os).
+If installing via the cloud (or using Docker), [please see cloud-based installation documentation](https://docs.nodebb.org/installing/cloud/).
 
 ## Securing NodeBB
 
@@ -58,6 +59,7 @@ It is important to ensure that your NodeBB and database servers are secured. Bea
     * Familiarise yourself with [Redis Security](http://redis.io/topics/security)
 2. Use `iptables` to secure your server from unintended open ports. In Ubuntu, `ufw` provides a friendlier interface to working with `iptables`.
     * e.g. If your NodeBB is proxied, no ports should be open except 80 (and possibly 22, for SSH access)
+
 
 ## Upgrading NodeBB
 

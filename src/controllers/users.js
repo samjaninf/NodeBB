@@ -1,5 +1,7 @@
 'use strict';
 
+const nconf = require('nconf');
+
 const user = require('../user');
 const meta = require('../meta');
 
@@ -11,6 +13,8 @@ const api = require('../api');
 const utils = require('../utils');
 
 const usersController = module.exports;
+
+const url = nconf.get('url');
 
 usersController.index = async function (req, res, next) {
 	const section = req.query.section || 'joindate';
@@ -25,7 +29,7 @@ usersController.index = async function (req, res, next) {
 
 	if (req.query.query) {
 		await usersController.search(req, res, next);
-	} else if (sectionToController[section]) {
+	} else if (sectionToController.hasOwnProperty(section) && sectionToController[section]) {
 		await sectionToController[section](req, res, next);
 	} else {
 		await usersController.getUsersSortedByJoinDate(req, res, next);
@@ -103,12 +107,12 @@ usersController.renderUsersPage = async function (set, req, res) {
 
 usersController.getUsers = async function (set, uid, query) {
 	const setToData = {
-		'users:postcount': { title: '[[pages:users/sort-posts]]', crumb: '[[users:top_posters]]' },
-		'users:reputation': { title: '[[pages:users/sort-reputation]]', crumb: '[[users:most_reputation]]' },
+		'users:postcount': { title: '[[pages:users/sort-posts]]', crumb: '[[users:top-posters]]' },
+		'users:reputation': { title: '[[pages:users/sort-reputation]]', crumb: '[[users:most-reputation]]' },
 		'users:joindate': { title: '[[pages:users/latest]]', crumb: '[[global:users]]' },
 		'users:online': { title: '[[pages:users/online]]', crumb: '[[global:online]]' },
 		'users:banned': { title: '[[pages:users/banned]]', crumb: '[[user:banned]]' },
-		'users:flags': { title: '[[pages:users/most-flags]]', crumb: '[[users:most_flags]]' },
+		'users:flags': { title: '[[pages:users/most-flags]]', crumb: '[[users:most-flags]]' },
 	};
 
 	if (!setToData[set]) {
@@ -183,7 +187,7 @@ usersController.getUsersAndCount = async function (set, uid, start, stop) {
 		getCount(),
 	]);
 	return {
-		users: usersData.filter(user => user && parseInt(user.uid, 10)),
+		users: usersData.filter(Boolean),
 		count: count,
 	};
 };
@@ -205,6 +209,13 @@ async function render(req, res, data) {
 	}
 
 	data['reputation:disabled'] = meta.config['reputation:disabled'];
+
+	res.locals.linkTags = [
+		{
+			rel: 'canonical',
+			href: `${url}${req.url.replace(/^\/api/, '')}`,
+		},
+	];
 
 	res.append('X-Total-Count', data.userCount);
 	res.render('users', data);

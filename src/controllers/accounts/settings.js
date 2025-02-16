@@ -13,13 +13,12 @@ const plugins = require('../../plugins');
 const notifications = require('../../notifications');
 const db = require('../../database');
 const helpers = require('../helpers');
-const accountHelpers = require('./helpers');
 const slugify = require('../../slugify');
 
 const settingsController = module.exports;
 
 settingsController.get = async function (req, res, next) {
-	const userData = await accountHelpers.getUserDataByUserSlug(req.params.userslug, req.uid, req.query);
+	const { userData } = res.locals;
 	if (!userData) {
 		return next();
 	}
@@ -53,11 +52,11 @@ settingsController.get = async function (req, res, next) {
 	userData.disableEmailSubscriptions = meta.config.disableEmailSubscriptions;
 
 	userData.dailyDigestFreqOptions = [
-		{ value: 'off', name: '[[user:digest_off]]', selected: userData.settings.dailyDigestFreq === 'off' },
-		{ value: 'day', name: '[[user:digest_daily]]', selected: userData.settings.dailyDigestFreq === 'day' },
-		{ value: 'week', name: '[[user:digest_weekly]]', selected: userData.settings.dailyDigestFreq === 'week' },
-		{ value: 'biweek', name: '[[user:digest_biweekly]]', selected: userData.settings.dailyDigestFreq === 'biweek' },
-		{ value: 'month', name: '[[user:digest_monthly]]', selected: userData.settings.dailyDigestFreq === 'month' },
+		{ value: 'off', name: '[[user:digest-off]]', selected: userData.settings.dailyDigestFreq === 'off' },
+		{ value: 'day', name: '[[user:digest-daily]]', selected: userData.settings.dailyDigestFreq === 'day' },
+		{ value: 'week', name: '[[user:digest-weekly]]', selected: userData.settings.dailyDigestFreq === 'week' },
+		{ value: 'biweek', name: '[[user:digest-biweekly]]', selected: userData.settings.dailyDigestFreq === 'biweek' },
+		{ value: 'month', name: '[[user:digest-monthly]]', selected: userData.settings.dailyDigestFreq === 'month' },
 	];
 
 	userData.languages.forEach((language) => {
@@ -114,17 +113,26 @@ const doUnsubscribe = async (payload) => {
 			user.updateDigestSetting(payload.uid, 'off'),
 		]);
 	} else if (payload.template === 'notification') {
+		const currentToNewSetting = {
+			notificationemail: 'notification',
+			email: 'none',
+		};
 		const current = await db.getObjectField(`user:${payload.uid}:settings`, `notificationType_${payload.type}`);
-		await user.setSetting(payload.uid, `notificationType_${payload.type}`, (current === 'notificationemail' ? 'notification' : 'none'));
+		if (currentToNewSetting.hasOwnProperty(current)) {
+			await user.setSetting(payload.uid, `notificationType_${payload.type}`, currentToNewSetting[current]);
+		}
 	}
 	return true;
 };
 
-settingsController.unsubscribe = async (req, res) => {
+settingsController.unsubscribe = async (req, res, next) => {
+	if (req.method === 'HEAD') {
+		return res.sendStatus(204);
+	}
 	try {
 		const payload = await jwtVerifyAsync(req.params.token);
 		if (!payload || !unsubscribable.includes(payload.template)) {
-			return;
+			return next();
 		}
 		await doUnsubscribe(payload);
 		res.render('unsubscribe', {
@@ -178,7 +186,7 @@ async function getNotificationSettings(userData) {
 		const setting = userData.settings[type];
 		return {
 			name: type,
-			label: `[[notifications:${type}]]`,
+			label: `[[notifications:${type.replace(/_/g, '-')}]]`,
 			none: setting === 'none',
 			notification: setting === 'notification',
 			email: setting === 'email',

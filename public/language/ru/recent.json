@@ -5,7 +5,9 @@
     "month": "За месяц",
     "year": "За год",
     "alltime": "За всё время",
-    "no_recent_topics": "Нет свежих тем.",
-    "no_popular_topics": "Популярные темы отсутствуют.",
-    "load-new-posts": "Загрузить новые сообщения"
+    "no-recent-topics": "Нет свежих тем.",
+    "no-popular-topics": "Популярные темы отсутствуют.",
+    "load-new-posts": "Загрузить новые сообщения",
+    "uncategorized.title": "All known topics",
+    "uncategorized.intro": "This page shows a chronological listing of every topic that this forum has received.<br />The views and opinions expressed in the topics below are not moderated and may not represent the views and opinions of this website."
 }

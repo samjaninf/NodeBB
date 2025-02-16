@@ -26,15 +26,12 @@ define('search', [
 
 		const quickSearchContainer = searchFields.find('#quick-search-container');
 		const toggleVisibility = searchFields.hasClass('hidden');
-
-		searchForm.find('.advanced-search-link').off('mousedown').on('mousedown', function () {
-			ajaxify.go('/search');
-		});
+		const webfingerRegex = /^(@|acct:)?[\w-]+@.+$/; // should match src/activitypub/helpers.js
 
 		if (toggleVisibility) {
-			searchInput.off('blur').on('blur', function dismissSearch() {
+			searchFields.off('focusout').on('focusout', function dismissSearch() {
 				setTimeout(function () {
-					if (!searchInput.is(':focus')) {
+					if (!searchFields.find(':focus').length) {
 						searchFields.addClass('hidden');
 						searchButton.removeClass('hidden');
 					}
@@ -74,6 +71,12 @@ define('search', [
 			const data = Search.getSearchPreferences();
 			data.term = input.val();
 			data.in = searchOptions.in;
+
+			// Override search target if webfinger handle entered
+			if (webfingerRegex.test(data.term)) {
+				data.in = 'users';
+			}
+
 			hooks.fire('action:search.submit', {
 				searchOptions: data,
 				searchElements: searchElements,
@@ -140,6 +143,7 @@ define('search', [
 						text.slice(start, start + 80) +
 						(text.length - start > 80 ? '...' : ''));
 				});
+				data.dropdown = { maxWidth: '400px', maxHeight: '500px', ...options.dropdown };
 				app.parseAndTranslate('partials/quick-search-results', data, function (html) {
 					if (html.length) {
 						html.find('.timeago').timeago();
@@ -180,30 +184,33 @@ define('search', [
 			doSearch();
 		}, 500));
 
-		let mousedownOnResults = false;
 		quickSearchResults.on('mousedown', '.quick-search-results > *', function () {
 			$(window).one('mouseup', function () {
 				quickSearchResults.addClass('hidden');
 			});
-			mousedownOnResults = true;
 		});
-		inputEl.on('blur', function () {
+
+		const inputParent = inputEl.parent();
+		const resultParent = quickSearchResults.parent();
+		inputParent.on('focusout', hideResults);
+		resultParent.on('focusout', hideResults);
+		function hideResults() {
 			setTimeout(function () {
-				if (!inputEl.is(':focus') && !mousedownOnResults && !quickSearchResults.hasClass('hidden')) {
+				if (!inputParent.find(':focus').length && !resultParent.find(':focus').length && !quickSearchResults.hasClass('hidden')) {
 					quickSearchResults.addClass('hidden');
 				}
 			}, 200);
-		});
+		}
 
 		let ajaxified = false;
 		hooks.on('action:ajaxify.end', function () {
 			if (!ajaxify.isCold()) {
 				ajaxified = true;
 			}
+			quickSearchResults.addClass('hidden');
 		});
 
 		inputEl.on('focus', function () {
-			mousedownOnResults = false;
 			const query = inputEl.val();
 			oldValue = query;
 			if (query && quickSearchResults.find('#quick-search-results').children().length) {
@@ -320,7 +327,7 @@ define('search', [
 			});
 		});
 
-		$('.search-result-text').find('img:not(.not-responsive)').addClass('img-fluid');
+		$('.search-results .content').find('img:not(.not-responsive)').addClass('img-fluid');
 	};
 
 	return Search;

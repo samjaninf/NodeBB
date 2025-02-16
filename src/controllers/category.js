@@ -20,9 +20,15 @@ const categoryController = module.exports;
 
 const url = nconf.get('url');
 const relative_path = nconf.get('relative_path');
+const validSorts = [
+	'recently_replied', 'recently_created', 'most_posts', 'most_votes', 'most_views',
+];
 
 categoryController.get = async function (req, res, next) {
 	const cid = req.params.category_id;
+	if (cid === '-1') {
+		return helpers.redirect(res, `${res.locals.isAPI ? '/api' : ''}/world?${qs.stringify(req.query)}`);
+	}
 
 	let currentPage = parseInt(req.query.page, 10) || 1;
 	let topicIndex = utils.isNumber(req.params.topic_index) ? parseInt(req.params.topic_index, 10) - 1 : 0;
@@ -72,12 +78,14 @@ categoryController.get = async function (req, res, next) {
 	const start = ((currentPage - 1) * userSettings.topicsPerPage) + topicIndex;
 	const stop = start + userSettings.topicsPerPage - 1;
 
+	const sort = validSorts.includes(req.query.sort) ? req.query.sort : userSettings.categoryTopicSort;
+
 	const categoryData = await categories.getCategoryById({
 		uid: req.uid,
 		cid: cid,
 		start: start,
 		stop: stop,
-		sort: req.query.sort || userSettings.categoryTopicSort,
+		sort: sort,
 		settings: userSettings,
 		query: req.query,
 		tag: req.query.tag,
@@ -98,10 +106,15 @@ categoryController.get = async function (req, res, next) {
 	categories.modifyTopicsByPrivilege(categoryData.topics, userPrivileges);
 	categoryData.tagWhitelist = categories.filterTagWhitelist(categoryData.tagWhitelist, userPrivileges.isAdminOrMod);
 
-	await buildBreadcrumbs(req, categoryData);
+	const allCategories = [];
+	categories.flattenCategories(allCategories, categoryData.children);
+
+	await Promise.all([
+		buildBreadcrumbs(req, categoryData),
+		categories.setUnread([categoryData], allCategories.map(c => c.cid).concat(cid), req.uid),
+	]);
+
 	if (categoryData.children.length) {
-		const allCategories = [];
-		categories.flattenCategories(allCategories, categoryData.children);
 		await categories.getRecentTopicReplies(allCategories, req.uid, req.query);
 		categoryData.subCategoriesLeft = Math.max(0, categoryData.children.length - categoryData.subCategoriesPerPage);
 		categoryData.hasMoreSubCategories = categoryData.children.length > categoryData.subCategoriesPerPage;
@@ -124,13 +137,16 @@ categoryController.get = async function (req, res, next) {
 	categoryData.topicIndex = topicIndex;
 	categoryData.selectedTag = tagData.selectedTag;
 	categoryData.selectedTags = tagData.selectedTags;
-	categoryData.rssFeedUrl = `${url}/category/${categoryData.cid}.rss`;
-	if (parseInt(req.uid, 10)) {
-		categories.markAsRead([cid], req.uid);
-		categoryData.rssFeedUrl += `?uid=${req.uid}&token=${rssToken}`;
+	categoryData.sortOptionLabel = `[[topic:${validator.escape(String(sort)).replace(/_/g, '-')}]]`;
+
+	if (!meta.config['feeds:disableRSS']) {
+		categoryData.rssFeedUrl = `${url}/category/${categoryData.cid}.rss`;
+		if (req.loggedIn) {
+			categoryData.rssFeedUrl += `?uid=${req.uid}&token=${rssToken}`;
+		}
 	}
 
-	addTags(categoryData, res);
+	addTags(categoryData, res, currentPage);
 
 	categoryData['feeds:disableRSS'] = meta.config['feeds:disableRSS'] || 0;
 	categoryData['reputation:disabled'] = meta.config['reputation:disabled'];
@@ -142,6 +158,11 @@ categoryController.get = async function (req, res, next) {
 
 	analytics.increment([`pageviews:byCid:${categoryData.cid}`]);
 
+	if (meta.config.activitypubEnabled) {
+		// Include link header for richer parsing
+		res.set('Link', `<${nconf.get('url')}/actegory/${cid}>; rel="alternate"; type="application/activity+json"`);
+	}
+
 	res.render('category', categoryData);
 };
 
@@ -149,7 +170,7 @@ async function buildBreadcrumbs(req, categoryData) {
 	const breadcrumbs = [
 		{
 			text: categoryData.name,
-			url: `${relative_path}/category/${categoryData.slug}`,
+			url: `${url}/category/${categoryData.slug}`,
 			cid: categoryData.cid,
 		},
 	];
@@ -159,7 +180,7 @@ async function buildBreadcrumbs(req, categoryData) {
 	}
 }
 
-function addTags(categoryData, res) {
+function addTags(categoryData, res, currentPage) {
 	res.locals.metaTags = [
 		{
 			name: 'title',
@@ -193,10 +214,16 @@ function addTags(categoryData, res) {
 		});
 	}
 
+	const page = currentPage > 1 ? `?page=${currentPage}` : '';
 	res.locals.linkTags = [
 		{
 			rel: 'up',
 			href: url,
+		},
+		{
+			rel: 'canonical',
+			href: `${url}/category/${categoryData.slug}${page}`,
+			noEscape: true,
 		},
 	];
 
@@ -205,6 +232,14 @@ function addTags(categoryData, res) {
 			rel: 'alternate',
 			type: 'application/rss+xml',
 			href: categoryData.rssFeedUrl,
+		});
+	}
+
+	if (meta.config.activitypubEnabled) {
+		res.locals.linkTags.push({
+			rel: 'alternate',
+			type: 'application/activity+json',
+			href: `${nconf.get('url')}/actegory/${categoryData.cid}`,
 		});
 	}
 }

@@ -5,13 +5,15 @@
 	"none-installed": "Keine Widgets gefunden! Aktiviere das Widget Essentials-Plugin in der <a href=\"%1\">Plugin</a>-Systemsteuerung.",
 	"clone-from": "Klone Widget von",
 	"containers.available": "Verfügbare Container",
-	"containers.explanation": "Per Drag-and-Drop auf ein beliebiges aktives Widget ziehen",
+	"containers.explanation": "Drag and Drop auf ein beliebiges Widget",
 	"containers.none": "Nichts",
 	"container.well": "Well",
 	"container.jumbotron": "Jumbotron",
 	"container.card": "Karte",
 	"container.card-header": "Karten-Kopfzeile",
 	"container.card-body": "Karten-Körper",
+	"container.title": "Titel",
+	"container.body": "Body",
 	"container.alert": "Alarm",
 
 	"alert.confirm-delete": "Möchtest Du dieses Widget wirklich löschen?",
@@ -29,5 +31,7 @@
 	"hide-from-groups": "Vor Gruppen verstecken",
 	"start-date": "Anfangsdatum",
 	"end-date": "Enddatum",
-	"hide-on-mobile": "Auf dem Handy verstecken"
+	"hide-on-mobile": "Auf dem Handy verstecken",
+	"hide-drafts": "Entwürfe ausblenden",
+	"show-drafts": "Entwürfe anzeigen"
 }

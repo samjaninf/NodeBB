@@ -8,8 +8,9 @@ const meta = require('../meta');
 const plugins = require('../plugins');
 const middleware = require('../middleware');
 const helpers = require('../middleware/helpers');
+const { secureRandom } = require('../utils');
 
-exports.handle404 = function handle404(req, res) {
+exports.handle404 = helpers.try(async (req, res) => {
 	const relativePath = nconf.get('relative_path');
 	const isClientScript = new RegExp(`^${relativePath}\\/assets\\/src\\/.+\\.js(\\?v=\\w+)?$`);
 
@@ -38,13 +39,13 @@ exports.handle404 = function handle404(req, res) {
 		}
 
 		meta.errors.log404(req.path.replace(/^\/api/, '') || '');
-		exports.send404(req, res);
+		await exports.send404(req, res);
 	} else {
 		res.status(404).type('txt').send('Not found');
 	}
-};
+});
 
-exports.send404 = async function (req, res) {
+exports.send404 = helpers.try(async (req, res) => {
 	res.status(404);
 	const path = String(req.path || '');
 	if (res.locals.isAPI) {
@@ -64,6 +65,6 @@ exports.send404 = async function (req, res) {
 		path: validator.escape(path),
 		title: '[[global:404.title]]',
 		bodyClass: helpers.buildBodyClass(req, res),
-		icon: icons[Math.floor(Math.random() * icons.length)],
+		icon: icons[secureRandom(0, icons.length - 1)],
 	});
-};
+});

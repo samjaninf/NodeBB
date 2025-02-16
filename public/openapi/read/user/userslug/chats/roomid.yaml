@@ -15,6 +15,12 @@ get:
       schema:
         type: string
       example: 1
+    - name: index
+      in: path
+      required: true
+      schema:
+        type: string
+      example: 1
   responses:
     "200":
       description: ""
@@ -32,6 +38,11 @@ get:
                     type: boolean
                   userCount:
                     type: number
+                  messageCount:
+                    type: number
+                  scrollToIndex:
+                    type: number
+                    nullable: true
                   icon:
                     type: string
                   groups:
@@ -79,6 +90,9 @@ get:
                             uid:
                               type: number
                               description: A user identifier
+                            isLocal:
+                              type: boolean
+                              description: Whether the user belongs to the local installation or not.
                             username:
                               type: string
                               description: A friendly name for a given user account
@@ -130,6 +144,9 @@ get:
                         uid:
                           type: number
                           description: A user identifier
+                        isLocal:
+                          type: boolean
+                          description: Whether the user belongs to the local installation or not.
                         username:
                           type: string
                           description: A friendly name for a given user account
@@ -160,6 +177,8 @@ get:
                           type: number
                   canReply:
                     type: boolean
+                  canUpload:
+                    type: boolean
                   groupChat:
                     type: boolean
                   usernames:
@@ -187,6 +206,8 @@ get:
                           type: boolean
                         userCount:
                           type: number
+                        messageCount:
+                          type: number
                         groups:
                           type: array
                         timestamp:
@@ -200,6 +221,9 @@ get:
                               uid:
                                 type: number
                                 description: A user identifier
+                              isLocal:
+                                type: boolean
+                                description: Whether the user belongs to the local installation or not.
                               username:
                                 type: string
                                 description: A friendly name for a given user account
@@ -238,6 +262,8 @@ get:
                         teaser:
                           type: object
                           properties:
+                            roomId:
+                              type: number
                             fromuid:
                               type: number
                             content:
@@ -253,6 +279,9 @@ get:
                                 uid:
                                   type: number
                                   description: A user identifier
+                                isLocal:
+                                  type: boolean
+                                  description: Whether the user belongs to the local installation or not.
                                 username:
                                   type: string
                                   description: A friendly name for a given user account
@@ -291,6 +320,9 @@ get:
                             uid:
                               type: number
                               description: A user identifier
+                            isLocal:
+                              type: boolean
+                              description: Whether the user belongs to the local installation or not.
                             username:
                               type: string
                               description: A friendly name for a given user account
@@ -351,6 +383,9 @@ get:
                               uid:
                                 type: number
                                 description: A user identifier
+                              isLocal:
+                                type: boolean
+                                description: Whether the user belongs to the local installation or not.
                               username:
                                 type: string
                                 description: A friendly name for a given user account
@@ -404,6 +439,9 @@ get:
                                 uid:
                                   type: number
                                   description: A user identifier
+                                isLocal:
+                                  type: boolean
+                                  description: Whether the user belongs to the local installation or not.
                                 username:
                                   type: string
                                   description: A friendly name for a given user account
@@ -442,6 +480,9 @@ get:
                             uid:
                               type: number
                               description: A user identifier
+                            isLocal:
+                              type: boolean
+                              description: Whether the user belongs to the local installation or not.
                             username:
                               type: string
                               description: A friendly name for a given user account
@@ -496,4 +537,7 @@ get:
                     type: string
                   bodyClasses:
                     type: array
+                  composerActions:
+                    type: array
+                    description: A list of buttons that are added next to the send message button by plugins
               - $ref: ../../../../components/schemas/CommonProps.yaml#/CommonProps

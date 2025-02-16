@@ -1,5 +1,6 @@
 {
 	"state": "Stato",
+	"report": "Segnalazione",
 	"reports": "Segnalazioni",
 	"first-reported": "Prima segnalazione",
 	"no-flags": "Evviva! Nessuna segnalazione trovata.",
@@ -8,7 +9,9 @@
 	"update": "Aggiorna",
 	"updated": "Aggiornato",
 	"resolved": "Risolto",
-	"target-purged": "Il contenuto di questa segnalazione è stato eliminato e non è più disponibile.",
+	"report-added": "Aggiunto",
+	"report-rescinded": "Annullato",
+	"target-purged": "Il contenuto di questa segnalazione è stato eliminato definitivamente e non è più disponibile.",
 	"target-aboutme-empty": "Questo utente non ha impostato &quot;Su di me&quot;.",
 
 	"graph-label": "Segnalazioni Giornaliere",
@@ -38,7 +41,7 @@
 	"go-to-target": "Visualizza oggetto segnalazione",
 	"assign-to-me": "Assegna a me",
 	"delete-post": "Elimina post",
-	"purge-post": "Elimina Post",
+	"purge-post": "Elimina definitivamente post",
 	"restore-post": "Ripristina post",
 	"delete": "Elimina segnalazione",
 
@@ -81,12 +84,18 @@
 	"modal-reason-offensive": "Offensivo",
 	"modal-reason-other": "Altro (specifica di seguito)",
 	"modal-reason-custom": "Motivo per cui segnali questo contenuto...",
+	"modal-notify-remote": "Forward this report to %1",
 	"modal-submit": "Invia segnalazione",
 	"modal-submit-success": "Il contenuto è stato segnalato per la moderazione.",
 
+	"modal-confirm-rescind": "Rescind Report?",
+
 	"bulk-actions": "Azioni in blocco",
 	"bulk-resolve": "Risolvi segnalazione(i)",
+	"confirm-purge": "Are you sure you want to permanently delete these flags?",
+	"purge-cancelled": "Flag Purge Cancelled",
+	"bulk-purge": "Purge Flag(s)",
 	"bulk-success": "%1 segnalazioni aggiornate",
-	"flagged-timeago-readable": "Segnalato <span class=\"timeago\" title=\"%1\"></span> (%2)",
+	"flagged-timeago": "Segnalato <span class=\"timeago\" title=\"%1\"></span>",
   	"auto-flagged": "[Contrassegnato automaticamente] Ha ricevuto %1 voti negativi."
 }

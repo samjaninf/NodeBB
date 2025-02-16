@@ -47,8 +47,8 @@ define('forum/topic/move-post', [
 				if (config.undoTimeout > 0) {
 					return alerts.alert({
 						alert_id: 'pids_move_' + postSelect.pids.join('-'),
-						title: '[[topic:thread_tools.move-posts]]',
-						message: '[[topic:topic_move_posts_success]]',
+						title: '[[topic:thread-tools.move-posts]]',
+						message: '[[topic:topic-move-posts-success]]',
 						type: 'success',
 						timeout: config.undoTimeout,
 						timeoutfn: function () {
@@ -56,7 +56,7 @@ define('forum/topic/move-post', [
 						},
 						clickfn: function (alert, params) {
 							delete params.timeoutfn;
-							alerts.success('[[topic:topic_move_posts_undone]]');
+							alerts.success('[[topic:topic-move-posts-undone]]');
 							moveCommit.removeAttr('disabled');
 						},
 					});
@@ -74,7 +74,7 @@ define('forum/topic/move-post', [
 		const tidInput = moveModal.find('#topicId');
 		let targetTid = null;
 		if (ajaxify.data.template.topic && ajaxify.data.tid &&
-			parseInt(ajaxify.data.tid, 10) !== fromTid
+			String(ajaxify.data.tid) !== String(fromTid)
 		) {
 			targetTid = ajaxify.data.tid;
 		}
@@ -98,8 +98,8 @@ define('forum/topic/move-post', [
 		}
 		const targetTid = getTargetTid();
 		if (postSelect.pids.length) {
-			if (targetTid && parseInt(targetTid, 10) !== parseInt(fromTid, 10)) {
-				api.get('/topics/' + targetTid, {}).then(function (data) {
+			if (targetTid && String(targetTid) !== String(fromTid)) {
+				api.get(`/topics/${targetTid}`, {}).then(function (data) {
 					if (!data || !data.tid) {
 						return alerts.error('[[error:no-topic]]');
 					}
@@ -123,7 +123,7 @@ define('forum/topic/move-post', [
 		}
 		const targetTid = getTargetTid();
 		if (postSelect.pids.length && targetTid &&
-			parseInt(targetTid, 10) !== parseInt(fromTid, 10)
+			String(targetTid) !== String(fromTid)
 		) {
 			moveCommit.removeAttr('disabled');
 		} else {
@@ -141,7 +141,7 @@ define('forum/topic/move-post', [
 			return;
 		}
 
-		Promise.all(data.pids.map(pid => api.put(`/posts/${pid}/move`, {
+		Promise.all(data.pids.map(pid => api.put(`/posts/${encodeURIComponent(pid)}/move`, {
 			tid: data.tid,
 		}))).then(() => {
 			data.pids.forEach(function (pid) {
@@ -149,8 +149,8 @@ define('forum/topic/move-post', [
 					$(this).remove();
 				});
 			});
-			if (data.pids.length === 1 && ajaxify.data.template.topic &&
-				parseInt(data.tid, 10) === parseInt(ajaxify.data.tid, 10)) {
+			if (data.pids.length && ajaxify.data.template.topic &&
+				String(data.tid) === String(ajaxify.data.tid)) {
 				ajaxify.go(`/post/${data.pids[0]}`);
 			}
 			closeMoveModal();

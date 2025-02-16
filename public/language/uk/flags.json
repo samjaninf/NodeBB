@@ -1,5 +1,6 @@
 {
 	"state": "Стан",
+	"report": "Report",
 	"reports": "Reports",
 	"first-reported": "First Reported",
 	"no-flags": "Ура! Скарг немає.",
@@ -8,6 +9,8 @@
 	"update": "Оновлення",
 	"updated": "Оновлено",
 	"resolved": "Resolved",
+	"report-added": "Added",
+	"report-rescinded": "Rescinded",
 	"target-purged": "Зміст на який подана ця скарга було стерто і він більше недоступний.",
 	"target-aboutme-empty": "This user has no &quot;About Me&quot; set.",
 
@@ -81,12 +84,18 @@
 	"modal-reason-offensive": "Образа",
 	"modal-reason-other": "Інше (зазначте нижче)",
 	"modal-reason-custom": "Причина скарги на цей вміст...",
+	"modal-notify-remote": "Forward this report to %1",
 	"modal-submit": "Надіслати скаргу",
 	"modal-submit-success": "Скарга на цей зміст надіслана модератору.",
 
+	"modal-confirm-rescind": "Rescind Report?",
+
 	"bulk-actions": "Bulk Actions",
 	"bulk-resolve": "Resolve Flag(s)",
+	"confirm-purge": "Are you sure you want to permanently delete these flags?",
+	"purge-cancelled": "Flag Purge Cancelled",
+	"bulk-purge": "Purge Flag(s)",
 	"bulk-success": "%1 flags updated",
-	"flagged-timeago-readable": "Flagged <span class=\"timeago\" title=\"%1\"></span> (%2)",
+	"flagged-timeago": "Flagged <span class=\"timeago\" title=\"%1\"></span>",
   	"auto-flagged": "[Auto Flagged] Received %1 downvotes."
 }

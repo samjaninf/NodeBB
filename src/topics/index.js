@@ -10,6 +10,7 @@ const plugins = require('../plugins');
 const meta = require('../meta');
 const user = require('../user');
 const categories = require('../categories');
+const activitypub = require('../activitypub');
 const privileges = require('../privileges');
 const social = require('../social');
 
@@ -69,8 +70,12 @@ Topics.getTopicsByTids = async function (tids, options) {
 
 	async function loadTopics() {
 		const topics = await Topics.getTopicsData(tids);
-		const uids = _.uniq(topics.map(t => t && t.uid && t.uid.toString()).filter(v => utils.isNumber(v)));
-		const cids = _.uniq(topics.map(t => t && t.cid && t.cid.toString()).filter(v => utils.isNumber(v)));
+		const uids = _.uniq(topics
+			.map(t => t && t.uid && t.uid.toString())
+			.filter(v => utils.isNumber(v) || activitypub.helpers.isUri(v)));
+		const cids = _.uniq(topics
+			.map(t => t && t.cid && t.cid.toString())
+			.filter(v => utils.isNumber(v)));
 		const guestTopics = topics.filter(t => t && t.uid === 0);
 
 		async function loadGuestHandles() {
@@ -116,10 +121,10 @@ Topics.getTopicsByTids = async function (tids, options) {
 		};
 	}
 
-	const [result, hasRead, isIgnored, bookmarks, callerSettings] = await Promise.all([
+	const [result, hasRead, followData, bookmarks, callerSettings] = await Promise.all([
 		loadTopics(),
 		Topics.hasReadTopics(tids, uid),
-		Topics.isIgnoring(tids, uid),
+		Topics.getFollowData(tids, uid),
 		Topics.getUserBookmarks(tids, uid),
 		user.getSettings(uid),
 	]);
@@ -136,11 +141,12 @@ Topics.getTopicsByTids = async function (tids, options) {
 			}
 			topic.teaser = result.teasers[i] || null;
 			topic.isOwner = topic.uid === parseInt(uid, 10);
-			topic.ignored = isIgnored[i];
-			topic.unread = parseInt(uid, 10) <= 0 || (!hasRead[i] && !isIgnored[i]);
-			topic.bookmark = sortNewToOld ?
+			topic.ignored = followData[i].ignoring;
+			topic.followed = followData[i].following;
+			topic.unread = parseInt(uid, 10) <= 0 || (!hasRead[i] && !topic.ignored);
+			topic.bookmark = bookmarks[i] && (sortNewToOld ?
 				Math.max(1, topic.postcount + 2 - bookmarks[i]) :
-				Math.min(topic.postcount, bookmarks[i] + 1);
+				Math.min(topic.postcount, bookmarks[i] + 1));
 			topic.unreplied = !topic.teaser;
 
 			topic.icons = [];
@@ -164,6 +170,7 @@ Topics.getTopicWithPosts = async function (topicData, set, uid, start, stop, rev
 		postSharing,
 		deleter,
 		merger,
+		forker,
 		related,
 		thumbs,
 		events,
@@ -177,6 +184,7 @@ Topics.getTopicWithPosts = async function (topicData, set, uid, start, stop, rev
 		social.getActivePostSharing(),
 		getDeleter(topicData),
 		getMerger(topicData),
+		getForker(topicData),
 		Topics.getRelatedTopics(topicData, uid),
 		Topics.thumbs.load([topicData]),
 		Topics.events.get(topicData.tid, uid, reverse),
@@ -184,7 +192,6 @@ Topics.getTopicWithPosts = async function (topicData, set, uid, start, stop, rev
 
 	topicData.thumbs = thumbs[0];
 	topicData.posts = posts;
-	topicData.events = events;
 	topicData.posts.forEach((p) => {
 		p.events = events.filter(
 			event => event.timestamp >= p.eventStart && event.timestamp < p.eventEnd
@@ -210,6 +217,10 @@ Topics.getTopicWithPosts = async function (topicData, set, uid, start, stop, rev
 	topicData.merger = merger;
 	if (merger) {
 		topicData.mergedTimestampISO = utils.toISOString(topicData.mergedTimestamp);
+	}
+	topicData.forker = forker;
+	if (forker) {
+		topicData.forkTimestampISO = utils.toISOString(topicData.forkTimestamp);
 	}
 	topicData.related = related || [];
 	topicData.unreplied = topicData.postcount === 1;
@@ -239,6 +250,21 @@ async function getMerger(topicData) {
 	]);
 	merger.mergedIntoTitle = mergedIntoTitle;
 	return merger;
+}
+
+async function getForker(topicData) {
+	if (!parseInt(topicData.forkerUid, 10)) {
+		return null;
+	}
+	const [
+		forker,
+		forkedFromTitle,
+	] = await Promise.all([
+		user.getUserFields(topicData.forkerUid, ['username', 'userslug', 'picture']),
+		Topics.getTopicField(topicData.forkedFromTid, 'title'),
+	]);
+	forker.forkedFromTitle = forkedFromTitle;
+	return forker;
 }
 
 Topics.getMainPost = async function (tid, uid) {

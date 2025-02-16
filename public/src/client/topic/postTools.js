@@ -36,7 +36,7 @@ define('forum/topic/postTools', [
 		if (!container) {
 			return;
 		}
-		$('[component="topic"]').on('show.bs.dropdown', '.moderator-tools', function () {
+		$('[component="topic"]').on('show.bs.dropdown', '[component="post/tools"]', function () {
 			const $this = $(this);
 			const dropdownMenu = $this.find('.dropdown-menu');
 			const { top } = this.getBoundingClientRect();
@@ -45,6 +45,10 @@ define('forum/topic/postTools', [
 			if (dropdownMenu.attr('data-loaded')) {
 				return;
 			}
+			dropdownMenu.html(helpers.generatePlaceholderWave([
+				3, 5, 9, 7, 10, 'divider', 10,
+			]));
+
 			const postEl = $this.parents('[data-pid]');
 			const pid = postEl.attr('data-pid');
 			const index = parseInt(postEl.attr('data-index'), 10);
@@ -113,7 +117,7 @@ define('forum/topic/postTools', [
 		});
 
 		$('.topic').on('click', '[component="topic/reply-as-topic"]', function () {
-			translator.translate('[[topic:link_back, ' + ajaxify.data.titleRaw + ', ' + config.relative_path + '/topic/' + ajaxify.data.slug + ']]', function (body) {
+			translator.translate(`[[topic:link-back, ${ajaxify.data.titleRaw}, ${config.relative_path}/topic/${ajaxify.data.slug}]]`, function (body) {
 				hooks.fire('action:composer.topic.new', {
 					cid: ajaxify.data.cid,
 					body: body,
@@ -137,12 +141,28 @@ define('forum/topic/postTools', [
 			votes.showVotes(getData($(this), 'data-pid'));
 		});
 
+		postContainer.on('click', '[component="post/announce-count"]', function () {
+			votes.showAnnouncers(getData($(this), 'data-pid'));
+		});
+
 		postContainer.on('click', '[component="post/flag"]', function () {
 			const pid = getData($(this), 'data-pid');
 			require(['flags'], function (flags) {
 				flags.showFlagModal({
 					type: 'post',
 					id: pid,
+				});
+			});
+		});
+
+		postContainer.on('click', '[component="post/already-flagged"]', function () {
+			const flagId = $(this).data('flag-id');
+			require(['flags'], function (flags) {
+				bootbox.confirm('[[flags:modal-confirm-rescind]]', function (confirm) {
+					if (!confirm) {
+						return;
+					}
+					flags.rescind(flagId);
 				});
 			});
 		});
@@ -249,6 +269,13 @@ define('forum/topic/postTools', [
 			});
 		});
 
+		postContainer.on('click', '[component="post/manage-editors"]', function () {
+			const btn = $(this);
+			require(['forum/topic/manage-editors'], function (manageEditors) {
+				manageEditors.init(btn.parents('[data-pid]'));
+			});
+		});
+
 		postContainer.on('click', '[component="post/ban-ip"]', function () {
 			const ip = $(this).attr('data-ip');
 			socket.emit('blacklist.addRule', ip, function (err) {
@@ -318,7 +345,7 @@ define('forum/topic/postTools', [
 				return quote(selectedNode.text);
 			}
 
-			const { content } = await api.get(`/posts/${toPid}/raw`);
+			const { content } = await api.get(`/posts/${encodeURIComponent(toPid)}/raw`);
 			quote(content);
 		});
 	}
@@ -348,7 +375,7 @@ define('forum/topic/postTools', [
 	function bookmarkPost(button, pid) {
 		const method = button.attr('data-bookmarked') === 'false' ? 'put' : 'del';
 
-		api[method](`/posts/${pid}/bookmark`, undefined, function (err) {
+		api[method](`/posts/${encodeURIComponent(pid)}/bookmark`, undefined, function (err) {
 			if (err) {
 				return alerts.error(err);
 			}
@@ -375,12 +402,12 @@ define('forum/topic/postTools', [
 					slug = slugify(post.attr('data-username'), true);
 					if (!slug) {
 						if (post.attr('data-uid') !== '0') {
-							slug = '[[global:former_user]]';
+							slug = '[[global:former-user]]';
 						} else {
 							slug = '[[global:guest]]';
 						}
 					}
-					if (slug && slug !== '[[global:former_user]]' && slug !== '[[global:guest]]') {
+					if (slug && slug !== '[[global:former-user]]' && slug !== '[[global:guest]]') {
 						slug = '@' + slug;
 					}
 					resolve(slug);
@@ -410,14 +437,14 @@ define('forum/topic/postTools', [
 			return;
 		}
 
-		bootbox.confirm('[[topic:post_' + action + '_confirm]]', function (confirm) {
+		bootbox.confirm('[[topic:post-' + action + '-confirm]]', function (confirm) {
 			if (!confirm) {
 				return;
 			}
 
 			const route = action === 'purge' ? '' : '/state';
 			const method = action === 'restore' ? 'put' : 'del';
-			api[method](`/posts/${pid}${route}`).catch(alerts.error);
+			api[method](`/posts/${encodeURIComponent(pid)}${route}`).catch(alerts.error);
 		});
 	}
 
@@ -431,7 +458,14 @@ define('forum/topic/postTools', [
 	}
 
 	function showStaleWarning(callback) {
-		const staleThreshold = Math.min(Date.now() - (1000 * 60 * 60 * 24 * ajaxify.data.topicStaleDays), 8640000000000000);
+		const topicStaleDays = parseInt(ajaxify.data.topicStaleDays, 10);
+		if (!topicStaleDays) {
+			return callback();
+		}
+		const staleThreshold = Math.min(
+			Date.now() - (1000 * 60 * 60 * 24 * ajaxify.data.topicStaleDays),
+			8640000000000000
+		);
 		if (staleReplyAnyway || ajaxify.data.lastposttime >= staleThreshold) {
 			return callback();
 		}
@@ -441,7 +475,7 @@ define('forum/topic/postTools', [
 			message: '[[topic:stale.warning]]',
 			buttons: {
 				reply: {
-					label: '[[topic:stale.reply_anyway]]',
+					label: '[[topic:stale.reply-anyway]]',
 					className: 'btn-link',
 					callback: function () {
 						staleReplyAnyway = true;
@@ -452,7 +486,7 @@ define('forum/topic/postTools', [
 					label: '[[topic:stale.create]]',
 					className: 'btn-primary',
 					callback: function () {
-						translator.translate('[[topic:link_back, ' + ajaxify.data.title + ', ' + config.relative_path + '/topic/' + ajaxify.data.slug + ']]', function (body) {
+						translator.translate(`[[topic:link-back, ${ajaxify.data.title}, ${config.relative_path}/topic/${ajaxify.data.slug}]]`, function (body) {
 							hooks.fire('action:composer.topic.new', {
 								cid: ajaxify.data.cid,
 								body: body,

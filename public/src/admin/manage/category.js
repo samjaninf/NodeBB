@@ -109,11 +109,14 @@ define('admin/manage/category', [
 							callback: function () {
 								modal.find('.modal-footer button').prop('disabled', true);
 
-								const intervalId = setInterval(function () {
-									socket.emit('categories.getTopicCount', ajaxify.data.category.cid, function (err, count) {
-										if (err) {
-											return alerts.error(err);
-										}
+								const intervalId = setInterval(async () => {
+									if (!ajaxify.data.category) {
+										// Already navigated away
+										return;
+									}
+
+									try {
+										const { count } = await api.get(`/categories/${ajaxify.data.category.cid}/count`);
 
 										let percent = 0;
 										if (ajaxify.data.category.topic_count > 0) {
@@ -121,7 +124,10 @@ define('admin/manage/category', [
 										}
 
 										modal.find('.progress-bar').css({ width: percent + '%' });
-									});
+									} catch (err) {
+										clearInterval(intervalId);
+										alerts.error(err);
+									}
 								}, 1000);
 
 								api.del('/categories/' + ajaxify.data.category.cid).then(() => {
@@ -130,7 +136,9 @@ define('admin/manage/category', [
 									}
 									modal.modal('hide');
 									alerts.success('[[admin/manage/categories:alert.purge-success]]');
-									ajaxify.go('admin/manage/categories');
+									setTimeout(() => {
+										ajaxify.go('admin/manage/categories');
+									}, 2500);
 								}).catch(alerts.error);
 
 								return false;
@@ -145,7 +153,7 @@ define('admin/manage/category', [
 			Benchpress.render('admin/partials/categories/copy-settings', {}).then(function (html) {
 				let selectedCid;
 				const modal = bootbox.dialog({
-					title: '[[modules:composer.select_category]]',
+					title: '[[modules:composer.select-category]]',
 					message: html,
 					buttons: {
 						save: {

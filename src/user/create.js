@@ -50,7 +50,7 @@ module.exports = function (User) {
 			lastonline: timestamp,
 			status: 'online',
 		};
-		['picture', 'fullname', 'location', 'birthday'].forEach((field) => {
+		['picture', 'fullname', 'birthday'].forEach((field) => {
 			if (data[field]) {
 				userData[field] = data[field];
 			}
@@ -166,7 +166,7 @@ module.exports = function (User) {
 		}
 
 		if (password.length < meta.config.minimumPasswordLength) {
-			throw new Error('[[reset_password:password_too_short]]');
+			throw new Error('[[reset_password:password-too-short]]');
 		}
 
 		if (password.length > 512) {
@@ -175,7 +175,7 @@ module.exports = function (User) {
 
 		const strength = zxcvbn(password);
 		if (strength.score < minStrength) {
-			throw new Error('[[user:weak_password]]');
+			throw new Error('[[user:weak-password]]');
 		}
 	};
 
@@ -184,7 +184,7 @@ module.exports = function (User) {
 		let { username } = userData;
 		while (true) {
 			/* eslint-disable no-await-in-loop */
-			const exists = await meta.userOrGroupExists(username);
+			const exists = await meta.slugTaken(username);
 			if (!exists) {
 				return numTries ? username : null;
 			}

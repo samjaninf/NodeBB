@@ -1,7 +1,6 @@
 'use strict';
 
 const winston = require('winston');
-const async = require('async');
 const nconf = require('nconf');
 const session = require('express-session');
 const semver = require('semver');
@@ -14,34 +13,34 @@ postgresModule.questions = [
 	{
 		name: 'postgres:host',
 		description: 'Host IP or address of your PostgreSQL instance',
-		default: nconf.get('postgres:host') || '127.0.0.1',
+		default: nconf.get('postgres:host') || nconf.get('defaults:postgres:host') || '127.0.0.1',
 	},
 	{
 		name: 'postgres:port',
 		description: 'Host port of your PostgreSQL instance',
-		default: nconf.get('postgres:port') || 5432,
+		default: nconf.get('postgres:port') || nconf.get('defaults:postgres:port') || 5432,
 	},
 	{
 		name: 'postgres:username',
 		description: 'PostgreSQL username',
-		default: nconf.get('postgres:username') || '',
+		default: nconf.get('postgres:username') || nconf.get('defaults:postgres:username') || '',
 	},
 	{
 		name: 'postgres:password',
 		description: 'Password of your PostgreSQL database',
 		hidden: true,
-		default: nconf.get('postgres:password') || '',
+		default: nconf.get('postgres:password') || nconf.get('defaults:postgres:password') || '',
 		before: function (value) { value = value || nconf.get('postgres:password') || ''; return value; },
 	},
 	{
 		name: 'postgres:database',
 		description: 'PostgreSQL database name',
-		default: nconf.get('postgres:database') || 'nodebb',
+		default: nconf.get('postgres:database') || nconf.get('defaults:postgres:database') || 'nodebb',
 	},
 	{
 		name: 'postgres:ssl',
 		description: 'Enable SSL for PostgreSQL database access',
-		default: nconf.get('postgres:ssl') || false,
+		default: nconf.get('postgres:ssl') || nconf.get('defaults:postgres:ssl') || false,
 	},
 ];
 
@@ -344,26 +343,20 @@ ALTER TABLE "session"
 	return done(db);
 };
 
-postgresModule.createIndices = function (callback) {
+postgresModule.createIndices = async function () {
 	if (!postgresModule.pool) {
 		winston.warn('[database/createIndices] database not initialized');
-		return callback();
+		return;
 	}
-
-	const query = postgresModule.pool.query.bind(postgresModule.pool);
-
 	winston.info('[database] Checking database indices.');
-	async.series([
-		async.apply(query, `CREATE INDEX IF NOT EXISTS "idx__legacy_zset__key__score" ON "legacy_zset"("_key" ASC, "score" DESC)`),
-		async.apply(query, `CREATE INDEX IF NOT EXISTS "idx__legacy_object__expireAt" ON "legacy_object"("expireAt" ASC)`),
-	], (err) => {
-		if (err) {
-			winston.error(`Error creating index ${err.message}`);
-			return callback(err);
-		}
+	try {
+		await postgresModule.pool.query(`CREATE INDEX IF NOT EXISTS "idx__legacy_zset__key__score" ON "legacy_zset"("_key" ASC, "score" DESC)`);
+		await postgresModule.pool.query(`CREATE INDEX IF NOT EXISTS "idx__legacy_object__expireAt" ON "legacy_object"("expireAt" ASC)`);
 		winston.info('[database] Checking database indices done!');
-		callback();
-	});
+	} catch (err) {
+		winston.error(`Error creating index ${err.message}`);
+		throw err;
+	}
 };
 
 postgresModule.checkCompatibility = function (callback) {

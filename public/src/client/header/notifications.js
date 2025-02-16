@@ -1,25 +1,26 @@
 'use strict';
 
-define('forum/header/notifications', ['components'], function (components) {
+define('forum/header/notifications', function () {
 	const notifications = {};
 
 	notifications.prepareDOM = function () {
-		const notifContainer = components.get('notifications');
-		const notifTrigger = notifContainer.children('a');
-		const notifList = components.get('notifications/list');
+		const notifTrigger = $('[component="notifications"] [data-bs-toggle="dropdown"]');
 
-		notifTrigger.on('click', function (e) {
-			e.preventDefault();
-			if (notifContainer.hasClass('open')) {
-				return;
-			}
-
-			requireAndCall('loadNotifications', notifList);
+		notifTrigger.on('show.bs.dropdown', async (ev) => {
+			const notifications = await app.require('notifications');
+			const triggerEl = $(ev.target);
+			notifications.loadNotifications(triggerEl, triggerEl.parent().find('[component="notifications/list"]'));
 		});
 
-		if (notifTrigger.parents('.dropdown').hasClass('open')) {
-			requireAndCall('loadNotifications', notifList);
-		}
+		notifTrigger.each((index, el) => {
+			const triggerEl = $(el);
+			const dropdownEl = triggerEl.parent().find('.dropdown-menu');
+			if (dropdownEl.hasClass('show')) {
+				app.require('notifications').then((notifications) => {
+					notifications.loadNotifications(triggerEl, dropdownEl.find('[component="notifications/list"]'));
+				});
+			}
+		});
 
 		socket.removeListener('event:new_notification', onNewNotification);
 		socket.on('event:new_notification', onNewNotification);
@@ -28,18 +29,14 @@ define('forum/header/notifications', ['components'], function (components) {
 		socket.on('event:notifications.updateCount', onUpdateCount);
 	};
 
-	function onNewNotification(data) {
-		requireAndCall('onNewNotification', data);
+	async function onNewNotification(data) {
+		const notifications = await app.require('notifications');
+		notifications.onNewNotification(data);
 	}
 
-	function onUpdateCount(data) {
-		requireAndCall('updateNotifCount', data);
-	}
-
-	function requireAndCall(method, param) {
-		require(['notifications'], function (notifications) {
-			notifications[method](param);
-		});
+	async function onUpdateCount(data) {
+		const notifications = await app.require('notifications');
+		notifications.updateNotifCount(data);
 	}
 
 	return notifications;

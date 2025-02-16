@@ -12,7 +12,12 @@ define('forum/chats/manage', [
 		buttonEl.on('click', async function () {
 			let groups = [];
 			if (app.user.isAdmin) {
-				groups = await socket.emit('groups.getChatGroups', {});
+				({ groups } = await api.get('/admin/groups'));
+				groups.sort((a, b) => b.system - a.system).map((g) => {
+					const { name, displayName } = g;
+					return { name, displayName };
+				});
+
 				if (Array.isArray(ajaxify.data.groups)) {
 					groups.forEach((g) => {
 						g.selected = ajaxify.data.groups.includes(g.name);
@@ -27,6 +32,7 @@ define('forum/chats/manage', [
 			});
 			modal = bootbox.dialog({
 				title: '[[modules:chat.manage-room]]',
+				size: 'large',
 				message: html,
 				onEscape: true,
 			});
@@ -96,7 +102,7 @@ define('forum/chats/manage', [
 
 	function addKickHandler(roomId, modal) {
 		modal.on('click', '[data-action="kick"]', function () {
-			const uid = parseInt(this.getAttribute('data-uid'), 10);
+			const uid = encodeURIComponent(this.getAttribute('data-uid'));
 
 			api.del(`/chats/${roomId}/users/${uid}`, {}).then((body) => {
 				refreshParticipantsList(roomId, modal, body);
@@ -106,12 +112,16 @@ define('forum/chats/manage', [
 
 	function addToggleOwnerHandler(roomId, modal) {
 		modal.on('click', '[data-action="toggleOwner"]', async function () {
-			const uid = parseInt(this.getAttribute('data-uid'), 10);
-			const $this = $(this);
-			await socket.emit('modules.chats.toggleOwner', { roomId: roomId, uid: uid });
-			$this.parents('[data-uid]')
-				.find('[component="chat/manage/user/owner/icon"]')
-				.toggleClass('hidden');
+			const uid = String(this.getAttribute('data-uid'));
+			const iconEl = modal.get(0).querySelector(`[component="chat/manage/user/list"] > [data-uid="${uid}"] [component="chat/manage/user/owner/icon"]`);
+			const current = !iconEl.classList.contains('hidden');
+
+			if (!utils.isNumber(uid)) {
+				return alerts.error('[[error:invalid-uid]]');
+			}
+
+			await api[current ? 'del' : 'put'](`/chats/${roomId}/owners/${uid}`);
+			iconEl.classList.toggle('hidden');
 		});
 	}
 

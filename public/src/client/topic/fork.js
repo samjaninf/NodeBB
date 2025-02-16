@@ -29,7 +29,10 @@ define('forum/topic/fork', [
 
 			$('body').append(forkModal);
 
-			categorySelector.init(forkModal.find('[component="category-selector"]'), {
+			const dropdownEl = forkModal.find('[component="category-selector"]');
+			dropdownEl.addClass('dropup');
+
+			categorySelector.init(dropdownEl, {
 				onSelect: function (category) {
 					selectedCategory = category;
 				},
@@ -80,7 +83,7 @@ define('forum/topic/fork', [
 			alerts.alert({
 				timeout: 5000,
 				title: '[[global:alert.success]]',
-				message: '[[topic:fork_success]]',
+				message: '[[topic:fork-success]]',
 				type: 'success',
 				clickfn: function () {
 					ajaxify.go('topic/' + newTopic.slug);
@@ -97,9 +100,9 @@ define('forum/topic/fork', [
 
 	function showPostsSelected() {
 		if (postSelect.pids.length) {
-			forkModal.find('#fork-pids').translateHtml('[[topic:fork_pid_count, ' + postSelect.pids.length + ']]');
+			forkModal.find('#fork-pids').translateHtml('[[topic:fork-pid-count, ' + postSelect.pids.length + ']]');
 		} else {
-			forkModal.find('#fork-pids').translateHtml('[[topic:fork_no_pids]]');
+			forkModal.find('#fork-pids').translateHtml('[[topic:fork-no-pids]]');
 		}
 	}
 

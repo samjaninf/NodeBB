@@ -9,6 +9,7 @@ const groups = require('../groups');
 const privileges = require('../privileges');
 const plugins = require('../plugins');
 const meta = require('../meta');
+const activitypub = require('../activitypub');
 const utils = require('../utils');
 const translator = require('../translator');
 const cache = require('../cache');
@@ -43,13 +44,17 @@ Messaging.getMessages = async (params) => {
 	if (!ok) {
 		return;
 	}
-	const mids = await getMessageIds(roomId, uid, start, stop);
+	const [mids, messageCount] = await Promise.all([
+		getMessageIds(roomId, uid, start, stop),
+		db.getObjectField(`chat:room:${roomId}`, 'messageCount'),
+	]);
 	if (!mids.length) {
 		return [];
 	}
+	const count = parseInt(messageCount, 10) || 0;
 	const indices = {};
 	mids.forEach((mid, index) => {
-		indices[mid] = start + index;
+		indices[mid] = count - start - index - 1;
 	});
 	mids.reverse();
 
@@ -169,7 +174,7 @@ Messaging.getPublicRooms = async (callerUid, uid) => {
 Messaging.getRecentChats = async (callerUid, uid, start, stop) => {
 	const ok = await canGet('filter:messaging.canGetRecentChats', callerUid, uid);
 	if (!ok) {
-		return null;
+		throw new Error('[[error:no-privileges]]');
 	}
 
 	const roomIds = await db.getSortedSetRevRange(`uid:${uid}:chat:rooms`, start, stop);
@@ -201,7 +206,7 @@ Messaging.getRecentChats = async (callerUid, uid, start, stop) => {
 	await Promise.all(results.roomData.map(async (room, index) => {
 		if (room) {
 			room.users = results.users[index];
-			room.groupChat = room.hasOwnProperty('groupChat') ? room.groupChat : room.users.length > 2;
+			room.groupChat = room.users.length > 2;
 			room.unread = results.unread[index];
 			room.teaser = results.teasers[index];
 
@@ -210,7 +215,7 @@ Messaging.getRecentChats = async (callerUid, uid, start, stop) => {
 					userData.status = user.getStatus(userData);
 				}
 			});
-			room.users = room.users.filter(user => user && parseInt(user.uid, 10));
+			room.users = room.users.filter(user => user && (parseInt(user.uid, 10) || activitypub.helpers.isUri(user.uid)));
 			room.lastUser = room.users[0];
 			room.usernames = Messaging.generateUsernames(room, uid);
 			room.chatWithMessage = await Messaging.generateChatWithMessage(room, uid, results.settings.userLang);
@@ -229,7 +234,7 @@ Messaging.getRecentChats = async (callerUid, uid, start, stop) => {
 
 Messaging.generateUsernames = function (room, excludeUid) {
 	const users = room.users.filter(u => u && parseInt(u.uid, 10) !== excludeUid);
-	const usernames = users.map(u => u.username);
+	const usernames = users.map(u => u.displayname);
 	if (users.length > 3) {
 		return translator.compile(
 			'modules:chat.usernames-and-x-others',
@@ -242,7 +247,9 @@ Messaging.generateUsernames = function (room, excludeUid) {
 
 Messaging.generateChatWithMessage = async function (room, callerUid, userLang) {
 	const users = room.users.filter(u => u && parseInt(u.uid, 10) !== callerUid);
-	const usernames = users.map(u => `<a href="${relative_path}/uid/${u.uid}">${u.username}</a>`);
+	const usernames = users.map(u => (utils.isNumber(u.uid) ?
+		`<a href="${relative_path}/uid/${u.uid}">${u.displayname}</a>` :
+		`<a href="${relative_path}/user/${u.username}">${u.displayname}</a>`));
 	let compiled = '';
 	if (!users.length) {
 		return '[[modules:chat.no-users-in-room]]';
@@ -335,9 +342,11 @@ Messaging.canMessageUser = async (uid, toUid) => {
 	if (parseInt(uid, 10) === parseInt(toUid, 10)) {
 		throw new Error('[[error:cant-chat-with-yourself]]');
 	}
-	const [exists, canChat] = await Promise.all([
+	const [exists, isTargetPrivileged, canChat, canChatWithPrivileged] = await Promise.all([
 		user.exists(toUid),
+		user.isPrivileged(toUid),
 		privileges.global.can('chat', uid),
+		privileges.global.can('chat:privileged', uid),
 		checkReputation(uid),
 	]);
 
@@ -345,7 +354,7 @@ Messaging.canMessageUser = async (uid, toUid) => {
 		throw new Error('[[error:no-user]]');
 	}
 
-	if (!canChat) {
+	if (!canChat && !(canChatWithPrivileged && isTargetPrivileged)) {
 		throw new Error('[[error:no-privileges]]');
 	}
 
@@ -357,7 +366,10 @@ Messaging.canMessageUser = async (uid, toUid) => {
 		user.blocks.is(uid, toUid),
 	]);
 
-	if (isBlocked || (settings.restrictChat && !isAdmin && !isModerator && !isFollowing)) {
+	if (isBlocked) {
+		throw new Error('[[error:chat-user-blocked]]');
+	}
+	if (settings.restrictChat && !isAdmin && !isModerator && !isFollowing) {
 		throw new Error('[[error:chat-restricted]]');
 	}
 
@@ -375,7 +387,7 @@ Messaging.canMessageRoom = async (uid, roomId) => {
 	const [roomData, inRoom, canChat] = await Promise.all([
 		Messaging.getRoomData(roomId),
 		Messaging.isUserInRoom(uid, roomId),
-		privileges.global.can('chat', uid),
+		privileges.global.can(['chat', 'chat:privileged'], uid),
 		checkReputation(uid),
 		user.checkMuted(uid),
 	]);
@@ -387,7 +399,7 @@ Messaging.canMessageRoom = async (uid, roomId) => {
 		throw new Error('[[error:not-in-room]]');
 	}
 
-	if (!canChat) {
+	if (!canChat.includes(true)) {
 		throw new Error('[[error:no-privileges]]');
 	}
 
@@ -411,7 +423,8 @@ async function checkReputation(uid) {
 }
 
 Messaging.hasPrivateChat = async (uid, withUid) => {
-	if (parseInt(uid, 10) === parseInt(withUid, 10)) {
+	if (parseInt(uid, 10) === parseInt(withUid, 10) ||
+		parseInt(uid, 10) <= 0 || parseInt(withUid, 10) <= 0) {
 		return 0;
 	}
 
@@ -442,7 +455,7 @@ Messaging.hasPrivateChat = async (uid, withUid) => {
 
 Messaging.canViewMessage = async (mids, roomId, uid) => {
 	let single = false;
-	if (!Array.isArray(mids) && isFinite(mids)) {
+	if (!Array.isArray(mids) && (utils.isNumber(mids) || activitypub.helpers.isUri(mids))) {
 		mids = [mids];
 		single = true;
 	}

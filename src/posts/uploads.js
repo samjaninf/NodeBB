@@ -54,22 +54,24 @@ module.exports = function (Posts) {
 
 		// Extract upload file paths from post content
 		let match = searchRegex.exec(content);
-		const uploads = [];
+		let uploads = new Set();
 		while (match) {
-			uploads.push(match[1].replace('-resized', ''));
+			uploads.add(match[1].replace('-resized', ''));
 			match = searchRegex.exec(content);
 		}
 
 		// Main posts can contain topic thumbs, which are also tracked by pid
 		if (isMainPost) {
 			const tid = await Posts.getPostField(pid, 'tid');
-			let thumbs = await topics.thumbs.get(tid);
+			let thumbs = await topics.thumbs.get(tid, { thumbsOnly: true });
 			thumbs = thumbs.map(thumb => thumb.path).filter(path => !validator.isURL(path, {
 				require_protocol: true,
 			}));
 			thumbs = thumbs.map(t => t.slice(1)); // remove leading `/` or `\\` on windows
-			uploads.push(...thumbs);
+			thumbs.forEach(t => uploads.add(t));
 		}
+
+		uploads = Array.from(uploads);
 
 		// Create add/remove sets
 		const add = uploads.filter(path => !currentUploads.includes(path));
@@ -163,7 +165,7 @@ module.exports = function (Posts) {
 		filePaths = await _filterValidPaths(filePaths); // Only process files that exist and are within uploads directory
 
 		const now = Date.now();
-		const scores = filePaths.map(() => now);
+		const scores = filePaths.map((p, i) => now + i);
 		const bulkAdd = filePaths.map(path => [`upload:${md5(path)}:pids`, now, pid]);
 		await Promise.all([
 			db.sortedSetAdd(`post:${pid}:uploads`, scores, filePaths),

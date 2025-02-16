@@ -17,14 +17,75 @@ ajaxify.widgets = { render: render };
 
 	ajaxify.count = 0;
 	ajaxify.currentPage = null;
+	ajaxify.requestedPage = null;
 	// disables scroll to top when back button is clicked
 	// https://developer.chrome.com/blog/history-api-scroll-restoration/
 	if ('scrollRestoration' in history) {
 		history.scrollRestoration = 'manual';
 	}
+
+	ajaxify.check = (item) => {
+		/**
+		 * returns:
+		 *   true  (ajaxify OK)
+		 *   false (browser default)
+		 *   null  (no action)
+		 */
+		let urlObj;
+		let pathname = item instanceof Element ? item.getAttribute('href') : undefined;
+		try {
+			urlObj = new URL(item, `${document.location.origin}${config.relative_path}`);
+			if (!pathname) {
+				({ pathname } = urlObj);
+			}
+		} catch (e) {
+			return false;
+		}
+
+		const internalLink = utils.isInternalURI(urlObj, window.location, config.relative_path);
+		// eslint-disable-next-line no-script-url
+		const hrefEmpty = href => href === undefined || href === '' || href === 'javascript:;';
+
+		if (item instanceof Element) {
+			if (item.getAttribute('data-ajaxify') === 'false') {
+				if (!internalLink) {
+					return false;
+				}
+
+				return null;
+			}
+
+			// eslint-disable-next-line no-script-url
+			if (hrefEmpty(urlObj.href) || urlObj.protocol === 'javascript:' || pathname === '#' || pathname === '') {
+				return null;
+			}
+		}
+
+		if (internalLink) {
+			// Default behaviour for rss feeds
+			if (pathname.endsWith('.rss')) {
+				return false;
+			}
+
+			// Default behaviour for sitemap
+			if (String(pathname).startsWith(config.relative_path + '/sitemap') && pathname.endsWith('.xml')) {
+				return false;
+			}
+
+			// Default behaviour for uploads and direct links to API urls
+			if (['/uploads', '/assets/', '/api/'].some(function (prefix) {
+				return String(pathname).startsWith(config.relative_path + prefix);
+			})) {
+				return false;
+			}
+		}
+
+		return true;
+	};
+
 	ajaxify.go = function (url, callback, quiet) {
 		// Automatically reconnect to socket and re-ajaxify on success
-		if (!socket.connected) {
+		if (!socket.connected && parseInt(app.user.uid, 10) >= 0) {
 			app.reconnect();
 
 			if (ajaxify.reconnectAction) {
@@ -38,10 +99,11 @@ ajaxify.widgets = { render: render };
 		}
 
 		// Abort subsequent requests if clicked multiple times within a short window of time
-		if (ajaxifyTimer && (Date.now() - ajaxifyTimer) < 500) {
+		if (ajaxify.requestedPage === url && ajaxifyTimer && (Date.now() - ajaxifyTimer) < 500) {
 			return true;
 		}
 		ajaxifyTimer = Date.now();
+		ajaxify.requestedPage = url;
 
 		if (ajaxify.handleRedirects(url)) {
 			return true;
@@ -134,6 +196,7 @@ ajaxify.widgets = { render: render };
 
 	ajaxify.updateHistory = function (url, quiet) {
 		ajaxify.currentPage = url.split(/[?#]/)[0];
+		ajaxify.requestedPage = null;
 		if (window.history && window.history.pushState) {
 			window.history[!quiet ? 'pushState' : 'replaceState']({
 				url: url,
@@ -147,7 +210,7 @@ ajaxify.widgets = { render: render };
 
 		if (data) {
 			let status = parseInt(data.status, 10);
-			if ([400, 403, 404, 500, 502, 504].includes(status)) {
+			if ([400, 403, 404, 500, 502, 503].includes(status)) {
 				if (status === 502 && retry) {
 					retry = false;
 					ajaxifyTimer = undefined;
@@ -157,13 +220,14 @@ ajaxify.widgets = { render: render };
 					status = 500;
 				}
 				if (data.responseJSON) {
+					ajaxify.data.bodyClass = data.responseJSON.bodyClass;
 					data.responseJSON.config = config;
 				}
 
 				$('#footer, #content').removeClass('hide').addClass('ajaxifying');
 				return renderTemplate(url, status.toString(), data.responseJSON || {}, callback);
 			} else if (status === 401) {
-				alerts.error('[[global:please_log_in]]');
+				alerts.error('[[global:please-log-in]]');
 				app.previousUrl = url;
 				window.location.href = config.relative_path + '/login';
 			} else if (status === 302 || status === 308) {
@@ -468,6 +532,20 @@ ajaxify.widgets = { render: render };
 		hooks.fire('action:ajaxify.cleanup', { url, tpl_url });
 	};
 
+	ajaxify.handleTransientElements = () => {
+		// todo: modals?
+
+		const elements = ['[component="notifications"]', '[component="chat/dropdown"]', '[component="sidebar/drafts"]', '[component="header/avatar"]']
+			.map(el => document.querySelector(`${el} .dropdown-menu.show`) || document.querySelector(`${el} + .dropdown-menu.show`))
+			.filter(Boolean);
+
+		if (elements.length) {
+			elements.forEach((el) => {
+				el.classList.remove('show');
+			});
+		}
+	};
+
 	translator.translate('[[error:no-connection]]');
 	translator.translate('[[error:socket-reconnect-failed]]');
 	translator.translate(`[[global:reconnecting-message, ${config.siteTitle}]]`);
@@ -478,15 +556,14 @@ ajaxify.widgets = { render: render };
 }());
 
 $(document).ready(function () {
-	$(window).on('popstate', function (ev) {
-		ev = ev.originalEvent;
-
+	window.addEventListener('popstate', (ev) => {
 		if (ev !== null && ev.state) {
 			if (ev.state.url === null && ev.state.returnPath !== undefined) {
 				window.history.replaceState({
 					url: ev.state.returnPath,
 				}, ev.state.returnPath, config.relative_path + '/' + ev.state.returnPath);
 			} else if (ev.state.url !== undefined) {
+				ajaxify.handleTransientElements();
 				ajaxify.go(ev.state.url, function () {
 					hooks.fire('action:popstate', { url: ev.state.url });
 				}, true);
@@ -495,10 +572,6 @@ $(document).ready(function () {
 	});
 
 	function ajaxifyAnchors() {
-		function hrefEmpty(href) {
-			// eslint-disable-next-line no-script-url
-			return href === undefined || href === '' || href === 'javascript:;';
-		}
 		const location = document.location || window.location;
 		const rootUrl = location.protocol + '//' + (location.hostname || location.host) + (location.port ? ':' + location.port : '');
 		const contentEl = document.getElementById('content');
@@ -510,10 +583,7 @@ $(document).ready(function () {
 				return;
 			}
 
-			const $this = $(this);
-			const href = $this.attr('href');
 			const internalLink = utils.isInternalURI(this, window.location, config.relative_path);
-
 			const rootAndPath = new RegExp(`^${rootUrl}${config.relative_path}/?`);
 			const process = function () {
 				if (!e.ctrlKey && !e.shiftKey && !e.metaKey && e.which === 1) {
@@ -539,57 +609,44 @@ $(document).ready(function () {
 								ajaxify.go('outgoing?url=' + encodeURIComponent(href));
 								e.preventDefault();
 							}
+						} else if (config.activitypub.probe) {
+							ajaxify.go(`ap?resource=${encodeURIComponent(this.href)}`);
+							e.preventDefault();
 						}
 					}
 				}
 			};
 
-			if ($this.attr('data-ajaxify') === 'false') {
-				if (!internalLink) {
-					return;
-				}
-				return e.preventDefault();
-			}
-
-			// Default behaviour for rss feeds
-			if (internalLink && href && href.endsWith('.rss')) {
-				return;
-			}
-
-			// Default behaviour for sitemap
-			if (internalLink && href && String(_self.pathname).startsWith(config.relative_path + '/sitemap') && href.endsWith('.xml')) {
-				return;
-			}
-
-			// Default behaviour for uploads and direct links to API urls
-			if (internalLink && ['/uploads', '/assets/', '/api/'].some(function (prefix) {
-				return String(_self.pathname).startsWith(config.relative_path + prefix);
-			})) {
-				return;
-			}
-
-			// eslint-disable-next-line no-script-url
-			if (hrefEmpty(this.href) || this.protocol === 'javascript:' || href === '#' || href === '') {
-				return e.preventDefault();
-			}
-
-			if (app.flags && app.flags.hasOwnProperty('_unsaved') && app.flags._unsaved === true) {
-				if (e.ctrlKey) {
-					return;
-				}
-
-				require(['bootbox'], function (bootbox) {
-					bootbox.confirm('[[global:unsaved-changes]]', function (navigate) {
-						if (navigate) {
-							app.flags._unsaved = false;
-							process.call(_self);
+			const check = ajaxify.check(this);
+			switch (check) {
+				case true: {
+					if (app.flags && app.flags.hasOwnProperty('_unsaved') && app.flags._unsaved === true) {
+						if (e.ctrlKey) {
+							return;
 						}
-					});
-				});
-				return e.preventDefault();
-			}
 
-			process.call(_self);
+						require(['bootbox'], function (bootbox) {
+							bootbox.confirm('[[global:unsaved-changes]]', function (navigate) {
+								if (navigate) {
+									app.flags._unsaved = false;
+									process.call(_self);
+								}
+							});
+						});
+						return e.preventDefault();
+					}
+
+					process.call(_self);
+					break;
+				}
+
+				case null: {
+					e.preventDefault();
+					break;
+				}
+
+				// default is default browser behaviour
+			}
 		});
 	}
 

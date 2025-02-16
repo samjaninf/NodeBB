@@ -14,6 +14,8 @@ const helpers = require('./helpers');
 
 const tagsController = module.exports;
 
+const url = nconf.get('url');
+
 tagsController.getTag = async function (req, res) {
 	const tag = validator.escape(utils.cleanUpTag(req.params.tag, meta.config.maximumTagLength));
 	const page = parseInt(req.query.page, 10) || 1;
@@ -25,13 +27,23 @@ tagsController.getTag = async function (req, res) {
 		breadcrumbs: helpers.buildBreadcrumbs([{ text: '[[tags:tags]]', url: '/tags' }, { text: tag }]),
 		title: `[[pages:tag, ${tag}]]`,
 	};
-	const [settings, cids, categoryData, canPost, isPrivileged] = await Promise.all([
+	let [settings, cids, categoryData, canPost, isPrivileged, rssToken, isFollowing] = await Promise.all([
 		user.getSettings(req.uid),
 		cid || categories.getCidsByPrivilege('categories:cid', req.uid, 'topics:read'),
 		helpers.getSelectedCategory(cid),
 		privileges.categories.canPostTopic(req.uid),
 		user.isPrivileged(req.uid),
+		user.auth.getFeedToken(req.uid),
+		topics.isFollowingTag(req.params.tag, req.uid),
 	]);
+
+	// Explicitly exclude cid -1 if cid not specified
+	if (!cid) {
+		cids = new Set(cids);
+		cids.delete(-1);
+		cids = Array.from(cids);
+	}
+
 	const start = Math.max(0, (page - 1) * settings.topicsPerPage);
 	const stop = start + settings.topicsPerPage - 1;
 
@@ -44,6 +56,7 @@ tagsController.getTag = async function (req, res) {
 	templateData.canPost = canPost;
 	templateData.showSelect = isPrivileged;
 	templateData.showTopicTools = isPrivileged;
+	templateData.isFollowing = isFollowing;
 	templateData.allCategoriesUrl = `tags/${tag}${helpers.buildQueryString(req.query, 'cid', '')}`;
 	templateData.selectedCategory = categoryData.selectedCategory;
 	templateData.selectedCids = categoryData.selectedCids;
@@ -69,16 +82,30 @@ tagsController.getTag = async function (req, res) {
 	});
 
 	templateData['feeds:disableRSS'] = meta.config['feeds:disableRSS'];
-	templateData.rssFeedUrl = `${nconf.get('relative_path')}/tags/${tag}.rss`;
+	if (!meta.config['feeds:disableRSS']) {
+		templateData.rssFeedUrl = `${nconf.get('relative_path')}/tags/${tag}.rss`;
+		if (req.loggedIn) {
+			templateData.rssFeedUrl += `?uid=${req.uid}&token=${rssToken}`;
+		}
+	}
+
 	res.render('tag', templateData);
 };
 
 tagsController.getTags = async function (req, res) {
-	const cids = await categories.getCidsByPrivilege('categories:cid', req.uid, 'topics:read');
+	let cids = await categories.getCidsByPrivilege('categories:cid', req.uid, 'topics:read');
+	cids = cids.filter(cid => cid !== -1);
 	const [canSearch, tags] = await Promise.all([
 		privileges.global.can('search:tags', req.uid),
 		topics.getCategoryTagsData(cids, 0, 99),
 	]);
+
+	res.locals.linkTags = [
+		{
+			rel: 'canonical',
+			href: `${url}/tags`,
+		},
+	];
 
 	res.render('tags', {
 		tags: tags.filter(Boolean),

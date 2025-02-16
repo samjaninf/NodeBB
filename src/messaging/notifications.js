@@ -1,19 +1,18 @@
 'use strict';
 
 const winston = require('winston');
+const validator = require('validator');
 
 const batch = require('../batch');
 const db = require('../database');
 const notifications = require('../notifications');
 const user = require('../user');
 const io = require('../socket.io');
+const api = require('../api');
 const plugins = require('../plugins');
-const meta = require('../meta');
+const utils = require('../utils');
 
 module.exports = function (Messaging) {
-	// Only used to notify a user of a new chat message
-	Messaging.notifyQueue = {};
-
 	Messaging.setUserNotificationSetting = async (uid, roomId, value) => {
 		if (parseInt(value, 10) === -1) {
 			// go back to default
@@ -70,45 +69,42 @@ module.exports = function (Messaging) {
 		// push unread count only for private rooms
 		if (!isPublic) {
 			const uids = await Messaging.getAllUidsInRoomFromSet(`chat:room:${roomId}:uids:online`);
+			unreadData.teaser = {
+				content: validator.escape(
+					String(utils.stripHTMLTags(utils.decodeHTMLEntities(messageObj.content)))
+				),
+				user: messageObj.fromUser,
+				timestampISO: messageObj.timestampISO,
+			};
 			Messaging.pushUnreadCount(uids, unreadData);
 		}
 
-		// Delayed notifications
-		let queueObj = Messaging.notifyQueue[`${fromUid}:${roomId}`];
-		if (queueObj) {
-			queueObj.message.content += `\n${messageObj.content}`;
-			clearTimeout(queueObj.timeout);
-		} else {
-			queueObj = {
-				message: messageObj,
-			};
-			Messaging.notifyQueue[`${fromUid}:${roomId}`] = queueObj;
+		try {
+			await Promise.all([
+				sendNotification(fromUid, roomId, messageObj),
+				!isPublic && utils.isNumber(fromUid) ?
+					api.activitypub.create.privateNote({ uid: fromUid }, { messageObj }) : null,
+			]);
+		} catch (err) {
+			winston.error(`[messaging/notifications] Unabled to send notification\n${err.stack}`);
 		}
-
-		queueObj.timeout = setTimeout(async () => {
-			try {
-				await sendNotification(fromUid, roomId, queueObj.message);
-				delete Messaging.notifyQueue[`${fromUid}:${roomId}`];
-			} catch (err) {
-				winston.error(`[messaging/notifications] Unabled to send notification\n${err.stack}`);
-			}
-		}, meta.config.notificationSendDelay * 1000);
 	};
 
 	async function sendNotification(fromUid, roomId, messageObj) {
-		fromUid = parseInt(fromUid, 10);
-
-		const [settings, roomData] = await Promise.all([
+		const [settings, roomData, realtimeUids] = await Promise.all([
 			db.getObject(`chat:room:${roomId}:notification:settings`),
 			Messaging.getRoomData(roomId),
+			io.getUidsInRoom(`chat_room_${roomId}`),
 		]);
 		const roomDefault = roomData.notificationSetting;
 		const uidsToNotify = [];
 		const { ALLMESSAGES } = Messaging.notificationSettings;
 		await batch.processSortedSet(`chat:room:${roomId}:uids:online`, async (uids) => {
 			uids = uids.filter(
-				uid => (parseInt((settings && settings[uid]) || roomDefault, 10) === ALLMESSAGES) &&
-					fromUid !== parseInt(uid, 10)
+				uid => utils.isNumber(uid) &&
+					(parseInt((settings && settings[uid]) || roomDefault, 10) === ALLMESSAGES) &&
+					String(fromUid) !== String(uid) &&
+					!realtimeUids.includes(parseInt(uid, 10))
 			);
 			const hasRead = await Messaging.hasRead(uids, roomId);
 			uidsToNotify.push(...uids.filter((uid, index) => !hasRead[index]));
@@ -121,25 +117,28 @@ module.exports = function (Messaging) {
 		if (uidsToNotify.length) {
 			const { displayname } = messageObj.fromUser;
 			const isGroupChat = await Messaging.isGroupChat(roomId);
+			const roomName = roomData.roomName || `[[modules:chat.room-id, ${roomId}]]`;
 			const notifData = {
 				type: isGroupChat ? 'new-group-chat' : 'new-chat',
-				subject: `[[email:notif.chat.subject, ${displayname}]]`,
-				bodyShort: `[[notifications:new_message_from, ${displayname}]]`,
+				subject: roomData.roomName ?
+					`[[email:notif.chat.new-message-from-user-in-room, ${displayname}, ${roomName}]]` :
+					`[[email:notif.chat.new-message-from-user, ${displayname}]]`,
+				bodyShort: isGroupChat || roomData.roomName ? `[[notifications:new-message-in, ${roomName}]]` : `[[notifications:new-message-from, ${displayname}]]`,
 				bodyLong: messageObj.content,
-				nid: `chat_${roomId}_${fromUid}`,
+				nid: `chat_${roomId}_${fromUid}_${Date.now()}`,
+				mergeId: `new-chat|${roomId}`, // as roomId is the differentiator, no distinction between direct vs. group req'd.
 				from: fromUid,
-				roomId: roomId,
+				roomId,
+				roomName,
 				path: `/chats/${messageObj.roomId}`,
 			};
 			if (roomData.public) {
 				const icon = Messaging.getRoomIcon(roomData);
-				const roomName = roomData.roomName || `[[modules:chat.room-id, ${roomId}]]`;
 				notifData.type = 'new-public-chat';
-				notifData.roomName = roomName;
 				notifData.roomIcon = icon;
-				notifData.subject = `[[email:notif.chat.public-chat-subject, ${displayname}, ${roomName}]]`;
-				notifData.bodyShort = `[[notifications:user_posted_in_public_room, ${displayname}, ${icon}, ${roomName}]]`;
-				notifData.mergeId = `notifications:user_posted_in_public_room|${roomId}`;
+				notifData.subject = `[[email:notif.chat.new-message-from-user-in-room, ${displayname}, ${roomName}]]`;
+				notifData.bodyShort = `[[notifications:user-posted-in-public-room, ${displayname}, ${icon}, ${roomName}]]`;
+				notifData.mergeId = `notifications:user-posted-in-public-room|${roomId}`;
 			}
 			const notification = await notifications.create(notifData);
 			await notifications.push(notification, uidsToNotify);

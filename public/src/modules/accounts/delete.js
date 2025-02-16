@@ -6,7 +6,7 @@ define('accounts/delete', ['api', 'bootbox', 'alerts'], function (api, bootbox, 
 	Delete.account = function (uid, callback) {
 		executeAction(
 			uid,
-			'[[user:delete_this_account_confirm]]',
+			'[[user:delete-this-account-confirm]]',
 			'/account',
 			'[[user:account-deleted]]',
 			callback
@@ -16,7 +16,7 @@ define('accounts/delete', ['api', 'bootbox', 'alerts'], function (api, bootbox, 
 	Delete.content = function (uid, callback) {
 		executeAction(
 			uid,
-			'[[user:delete_account_content_confirm]]',
+			'[[user:delete-account-content-confirm]]',
 			'/content',
 			'[[user:account-content-deleted]]',
 			callback
@@ -26,7 +26,7 @@ define('accounts/delete', ['api', 'bootbox', 'alerts'], function (api, bootbox, 
 	Delete.purge = function (uid, callback) {
 		executeAction(
 			uid,
-			'[[user:delete_all_confirm]]',
+			'[[user:delete-all-confirm]]',
 			'',
 			'[[user:account-deleted]]',
 			callback
@@ -39,7 +39,7 @@ define('accounts/delete', ['api', 'bootbox', 'alerts'], function (api, bootbox, 
 				return;
 			}
 
-			api.del(`/users/${uid}${path}`, {}).then(() => {
+			api.del(`/users/${encodeURIComponent(uid)}${path}`, {}).then(() => {
 				alerts.success(successText);
 
 				if (typeof callback === 'function') {

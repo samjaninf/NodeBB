@@ -39,6 +39,7 @@ start.start = async function () {
 			require('./user').startJobs();
 			require('./plugins').startJobs();
 			require('./topics').scheduled.startJobs();
+			require('./activitypub').startJobs();
 			await db.delete('locks');
 		}
 
@@ -137,13 +138,15 @@ async function shutdown(code) {
 		winston.info('[app] Web server closed to connections.');
 		await require('./analytics').writeData();
 		winston.info('[app] Live analytics saved.');
-		await require('./database').close();
+		const db = require('./database');
+		await db.delete('locks');
+		await db.close();
 		winston.info('[app] Database connection closed.');
 		winston.info('[app] Shutdown complete.');
 		process.exit(code || 0);
 	} catch (err) {
 		winston.error(err.stack);
 
-		return process.exit(code || 0);
+		process.exit(code || 0);
 	}
 }

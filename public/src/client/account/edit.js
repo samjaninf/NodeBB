@@ -25,9 +25,9 @@ define('forum/account/edit', [
 		handleEmailConfirm();
 		updateSignature();
 		updateAboutMe();
-		handleGroupSort();
+		handleGroupControls();
 
-		if (!ajaxify.data.isSelf && app.user.isAdmin) {
+		if (!ajaxify.data.isSelf && ajaxify.data.canEdit) {
 			$(`a[href="${config.relative_path}/user/${ajaxify.data.userslug}/edit/email"]`).on('click', () => {
 				changeEmail.init({
 					uid: ajaxify.data.uid,
@@ -42,17 +42,30 @@ define('forum/account/edit', [
 	};
 
 	function updateProfile() {
-		const userData = $('form[component="profile/edit/form"]').serializeObject();
+		function getGroupSelection() {
+			const els = $('[component="group/badge/list"] [component="group/badge/item"][data-selected="true"]');
+			return els.map((i, el) => $(el).attr('data-value')).get();
+		}
+		const editForm = $('form[component="profile/edit/form"]');
+		const userData = editForm.serializeObject();
+
+		// stringify multi selects
+		editForm.find('select[multiple]').each((i, el) => {
+			const name = $(el).attr('name');
+			if (userData[name] && !Array.isArray(userData[name])) {
+				userData[name] = [userData[name]];
+			}
+			userData[name] = JSON.stringify(userData[name] || []);
+		});
+
 		userData.uid = ajaxify.data.uid;
 		userData.groupTitle = userData.groupTitle || '';
-		userData.groupTitle = JSON.stringify(
-			Array.isArray(userData.groupTitle) ? userData.groupTitle : [userData.groupTitle]
-		);
+		userData.groupTitle = JSON.stringify(getGroupSelection());
 
 		hooks.fire('action:profile.update', userData);
 
 		api.put('/users/' + userData.uid, userData).then((res) => {
-			alerts.success('[[user:profile_update_success]]');
+			alerts.success('[[user:profile-update-success]]');
 
 			if (res.picture) {
 				$('#user-current-picture').attr('src', res.picture);
@@ -68,7 +81,7 @@ define('forum/account/edit', [
 
 	function handleAccountDelete() {
 		$('#deleteAccountBtn').on('click', function () {
-			translator.translate('[[user:delete_account_confirm]]', function (translated) {
+			translator.translate('[[user:delete-account-confirm]]', function (translated) {
 				const modal = bootbox.confirm(translated + '<p><input type="password" class="form-control" id="confirm-password" /></p>', function (confirm) {
 					if (!confirm) {
 						return;
@@ -142,26 +155,34 @@ define('forum/account/edit', [
 		});
 	}
 
-	function handleGroupSort() {
-		function move(direction) {
-			const selected = $('#groupTitle').val();
-			if (!ajaxify.data.allowMultipleBadges || (Array.isArray(selected) && selected.length > 1)) {
-				return;
+	function handleGroupControls() {
+		const { allowMultipleBadges } = ajaxify.data;
+		$('[component="group/toggle/hide"]').on('click', function () {
+			const groupEl = $(this).parents('[component="group/badge/item"]');
+			groupEl.attr('data-selected', 'false');
+			$(this).addClass('hidden');
+			groupEl.find('[component="group/toggle/show"]').removeClass('hidden');
+		});
+
+		$('[component="group/toggle/show"]').on('click', function () {
+			if (!allowMultipleBadges) {
+				$('[component="group/badge/list"] [component="group/toggle/show"]').removeClass('hidden');
+				$('[component="group/badge/list"] [component="group/toggle/hide"]').addClass('hidden');
+				$('[component="group/badge/list"] [component="group/badge/item"]').attr('data-selected', 'false');
 			}
-			const el = $('#groupTitle').find(':selected');
-			if (el.length && el.val()) {
-				if (direction > 0) {
-					el.insertAfter(el.next());
-				} else if (el.prev().val()) {
-					el.insertBefore(el.prev());
-				}
-			}
-		}
+			const groupEl = $(this).parents('[component="group/badge/item"]');
+			groupEl.attr('data-selected', 'true');
+			$(this).addClass('hidden');
+			groupEl.find('[component="group/toggle/hide"]').removeClass('hidden');
+		});
+
 		$('[component="group/order/up"]').on('click', function () {
-			move(-1);
+			const el = $(this).parents('[component="group/badge/item"]');
+			el.insertBefore(el.prev());
 		});
 		$('[component="group/order/down"]').on('click', function () {
-			move(1);
+			const el = $(this).parents('[component="group/badge/item"]');
+			el.insertAfter(el.next());
 		});
 	}
 

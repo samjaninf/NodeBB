@@ -13,6 +13,7 @@ const meta = require('../meta');
 const io = require('../socket.io');
 const cache = require('../cache');
 const cacheCreate = require('../cacheCreate');
+const utils = require('../utils');
 
 const roomUidCache = cacheCreate({
 	name: 'chat:room:uids',
@@ -21,7 +22,7 @@ const roomUidCache = cacheCreate({
 });
 
 const intFields = [
-	'roomId', 'timestamp', 'userCount',
+	'roomId', 'timestamp', 'userCount', 'messageCount',
 ];
 
 module.exports = function (Messaging) {
@@ -48,9 +49,7 @@ module.exports = function (Messaging) {
 				db.parseIntFields(data, intFields, fields);
 				data.roomName = validator.escape(String(data.roomName || ''));
 				data.public = parseInt(data.public, 10) === 1;
-				if (data.hasOwnProperty('groupChat')) {
-					data.groupChat = parseInt(data.groupChat, 10) === 1;
-				}
+				data.groupChat = data.userCount > 2;
 
 				if (!fields.length || fields.includes('notificationSetting')) {
 					data.notificationSetting = data.notificationSetting ||
@@ -88,6 +87,7 @@ module.exports = function (Messaging) {
 			roomId: roomId,
 			timestamp: now,
 			notificationSetting: data.notificationSetting,
+			messageCount: 0,
 		};
 
 		if (data.hasOwnProperty('roomName') && data.roomName) {
@@ -233,15 +233,24 @@ module.exports = function (Messaging) {
 		return isArray ? result : result[0];
 	};
 
-	Messaging.toggleOwner = async (uid, roomId) => {
+	Messaging.toggleOwner = async (uid, roomId, state = null) => {
 		if (!(parseInt(uid, 10) > 0) || !roomId) {
-			return;
+			throw new Error('[[error:invalid-data]]');
 		}
+
 		const isOwner = await Messaging.isRoomOwner(uid, roomId);
-		if (isOwner) {
-			await db.sortedSetRemove(`chat:room:${roomId}:owners`, uid);
+		if (state !== null) {
+			if (state === isOwner) {
+				return false;
+			}
 		} else {
+			state = !isOwner;
+		}
+
+		if (state) {
 			await db.sortedSetAdd(`chat:room:${roomId}:owners`, Date.now(), uid);
+		} else {
+			await db.sortedSetRemove(`chat:room:${roomId}:owners`, uid);
 		}
 	};
 
@@ -251,6 +260,13 @@ module.exports = function (Messaging) {
 
 	Messaging.addUsersToRoom = async function (uid, uids, roomId) {
 		uids = _.uniq(uids);
+
+		// Public rooms must only contain local users
+		const isPublic = await db.getObjectField(`chat:room:${roomId}`, 'public');
+		if (parseInt(isPublic, 10) === 1 && uids.some(uid => !utils.isNumber(uid))) {
+			throw new Error('[[error:invalid-uid]]');
+		}
+
 		const inRoom = await Messaging.isUserInRoom(uid, roomId);
 		const payload = await plugins.hooks.fire('filter:messaging.addUsersToRoom', { uid, uids, roomId, inRoom });
 
@@ -443,7 +459,7 @@ module.exports = function (Messaging) {
 		const [room, inRoom, canChat, isAdmin, isGlobalMod] = await Promise.all([
 			Messaging.getRoomData(roomId),
 			Messaging.isUserInRoom(uid, roomId),
-			privileges.global.can('chat', uid),
+			privileges.global.can(['chat', 'chat:privileged'], uid),
 			user.isAdministrator(uid),
 			user.isGlobalModerator(uid),
 		]);
@@ -456,7 +472,7 @@ module.exports = function (Messaging) {
 		) {
 			return null;
 		}
-		if (!canChat) {
+		if (!canChat.includes(true)) {
 			throw new Error('[[error:no-privileges]]');
 		}
 
@@ -502,6 +518,7 @@ module.exports = function (Messaging) {
 			Messaging.getUsersInRoomFromSet(`chat:room:${roomId}:uids:online`, roomId, 0, 39, true),
 			Messaging.getMessages({
 				callerUid: uid,
+				start: data.start || 0,
 				uid: data.uid || uid,
 				roomId: roomId,
 				isNew: false,
@@ -523,7 +540,7 @@ module.exports = function (Messaging) {
 		room.isOwner = isOwner;
 		room.users = users;
 		room.canReply = canReply;
-		room.groupChat = room.hasOwnProperty('groupChat') ? room.groupChat : users.length > 2;
+		room.groupChat = users.length > 2;
 		room.icon = Messaging.getRoomIcon(room);
 		room.usernames = Messaging.generateUsernames(room, uid);
 		room.chatWithMessage = await Messaging.generateChatWithMessage(room, uid, settings.userLang);
@@ -534,6 +551,7 @@ module.exports = function (Messaging) {
 		room.isAdmin = isAdmin;
 		room.notificationOptions = notifOptions.options;
 		room.notificationOptionsIcon = notifOptions.selectedIcon;
+		room.composerActions = [];
 
 		const payload = await plugins.hooks.fire('filter:messaging.loadRoom', { uid, data, room });
 		return payload.room;

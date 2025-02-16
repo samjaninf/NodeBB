@@ -20,11 +20,14 @@ async function setup(initConfig) {
 	console.log('Press enter to accept the default setting (shown in brackets).');
 
 	install.values = initConfig;
-	const data = await install.setup();
 	let configFile = paths.config;
-	if (nconf.get('config')) {
-		configFile = path.resolve(paths.baseDir, nconf.get('config'));
+	const config = nconf.any(['config', 'CONFIG']);
+	if (config) {
+		nconf.set('config', config);
+		configFile = path.resolve(paths.baseDir, config);
 	}
+
+	const data = await install.setup();
 
 	prestart.loadConfig(configFile);
 
@@ -48,8 +51,8 @@ async function setup(initConfig) {
 	}
 	console.log('NodeBB Setup Completed. Run "./nodebb start" to manually start your NodeBB server.');
 
-	// If I am a child process, notify the parent of the returned data before exiting (useful for notifying
-	// hosts of auto-generated username/password during headless setups)
+	// If I am a child process, notify the parent of the returned data before exiting
+	// (useful for notifying hosts during headless setups)
 	if (process.send) {
 		process.send(data);
 	}

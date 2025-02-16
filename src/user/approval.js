@@ -14,8 +14,12 @@ const slugify = require('../slugify');
 const plugins = require('../plugins');
 
 module.exports = function (User) {
-	new cronJob('0 * * * *', (() => {
-		User.autoApprove();
+	new cronJob('0 * * * *', (async () => {
+		try {
+			await User.autoApprove();
+		} catch (err) {
+			winston.error(err.stack);
+		}
 	}), null, true);
 
 	User.addToApprovalQueue = async function (userData) {
@@ -52,10 +56,10 @@ module.exports = function (User) {
 	async function sendNotificationToAdmins(username) {
 		const notifObj = await notifications.create({
 			type: 'new-register',
-			bodyShort: `[[notifications:new_register, ${username}]]`,
-			nid: `new_register:${username}`,
+			bodyShort: `[[notifications:new-register, ${username}]]`,
+			nid: `new-register:${username}`,
 			path: '/admin/manage/registration',
-			mergeId: 'new_register',
+			mergeId: 'new-register',
 		});
 		await notifications.pushGroup(notifObj, 'administrators');
 	}
@@ -87,7 +91,7 @@ module.exports = function (User) {
 	};
 
 	async function markNotificationRead(username) {
-		const nid = `new_register:${username}`;
+		const nid = `new-register:${username}`;
 		const uids = await groups.getMembers('administrators', 0, -1);
 		const promises = uids.map(uid => notifications.markRead(nid, uid));
 		await Promise.all(promises);
@@ -160,8 +164,14 @@ module.exports = function (User) {
 		const users = await db.getSortedSetRevRangeWithScores('registration:queue', 0, -1);
 		const now = Date.now();
 		for (const user of users.filter(user => now - user.score >= meta.config.autoApproveTime * 3600000)) {
-			// eslint-disable-next-line no-await-in-loop
-			await User.acceptRegistration(user.value);
+			try {
+				// eslint-disable-next-line no-await-in-loop
+				await User.acceptRegistration(user.value);
+			} catch (err) {
+				winston.error(err.stack);
+				// eslint-disable-next-line no-await-in-loop
+				await removeFromQueue(user.value);
+			}
 		}
 	};
 };
